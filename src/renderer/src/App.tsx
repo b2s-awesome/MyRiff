@@ -8,7 +8,7 @@ import {
   Trash2, Upload, X, Pencil, RefreshCw, Heart, Disc3, Music, ArrowUpRight, ExternalLink,
   WandSparkles, History, Star, AudioWaveform, Keyboard, Bookmark, Archive, CheckCircle2
 } from 'lucide-react'
-import type { AppSettings, DownloadProgress, LyricsResult, LyricLine, Playlist, SearchResult, StreamSource, Track, PlaybackState } from '../../shared/types'
+import type { AppSettings, DownloadProgress, LyricsResult, LyricLine, Playlist, PlaylistFolder, SearchResult, StreamSource, Track, PlaybackState } from '../../shared/types'
 import TrackGrid from './components/TrackGrid'
 import PlayerBar from './components/PlayerBar'
 import EffectsPanel from './components/EffectsPanel'
@@ -42,6 +42,8 @@ export default function App() {
   const { ensureGraph, analyser, crossfadeToNext, handoffToMain, resetCrossfade } = audioEngine
   const [tracks, setTracks] = useState<Track[]>([])
   const [playlists, setPlaylists] = useState<Playlist[]>([])
+  const [playlistFolders, setPlaylistFolders] = useState<PlaylistFolder[]>([])
+  const [playlistFolderFilter, setPlaylistFolderFilter] = useState<'all' | 'unfiled' | number>('all')
   const [downloads, setDownloads] = useState<DownloadRecord[]>([])
   const [page, setPage] = useState<Page>('library')
   const [globalSearch, setGlobalSearch] = useState('')
@@ -115,7 +117,38 @@ export default function App() {
     }
   }, [notify])
 
-  const refreshPlaylists = useCallback(async () => { setPlaylists(await window.myriff.listPlaylists()) }, [])
+  const refreshPlaylists = useCallback(async () => {
+    const [latestPlaylists, latestFolders] = await Promise.all([window.myriff.listPlaylists(), window.myriff.listPlaylistFolders()])
+    setPlaylists(latestPlaylists); setPlaylistFolders(latestFolders)
+  }, [])
+  const promptCreatePlaylistFolder = useCallback(async (parentId: number | null = null) => {
+    const name = prompt(parentId === null ? 'Name your playlist folder' : 'Name your subfolder')
+    if (!name?.trim()) return
+    try {
+      const folder = await window.myriff.createPlaylistFolder(name, parentId)
+      await refreshPlaylists(); setPlaylistFolderFilter(folder.id); setPlaylistId(null)
+      notify(`Created folder “${folder.name}”.`)
+    } catch (error) { notify(error instanceof Error ? error.message : 'Could not create folder.') }
+  }, [refreshPlaylists, notify])
+  const promptRenamePlaylistFolder = useCallback(async (folder: PlaylistFolder) => {
+    const name = prompt('Rename folder', folder.name)
+    if (!name?.trim()) return
+    try { await window.myriff.renamePlaylistFolder(folder.id, name); await refreshPlaylists(); notify('Folder renamed.') }
+    catch (error) { notify(error instanceof Error ? error.message : 'Could not rename folder.') }
+  }, [refreshPlaylists, notify])
+  const promptDeletePlaylistFolder = useCallback(async (folder: PlaylistFolder) => {
+    if (!confirm(`Delete “${folder.name}” and its subfolders? Playlists inside will be preserved in Unfiled. Audio files will not be deleted.`)) return
+    try { await window.myriff.deletePlaylistFolder(folder.id); await refreshPlaylists(); setPlaylistFolderFilter('all'); notify('Folder deleted; playlists were preserved in Unfiled.') }
+    catch (error) { notify(error instanceof Error ? error.message : 'Could not delete folder.') }
+  }, [refreshPlaylists, notify])
+  const movePlaylistToFolder = useCallback(async (playlistIdToMove: number, folderId: number | null) => {
+    try {
+      await window.myriff.movePlaylistToFolder(playlistIdToMove, folderId)
+      await refreshPlaylists()
+      setPlaylistFolderFilter(folderId === null ? 'unfiled' : folderId)
+      notify(folderId === null ? 'Playlist moved to Unfiled.' : 'Playlist moved into folder.')
+    } catch (error) { notify(error instanceof Error ? error.message : 'Could not move playlist.') }
+  }, [refreshPlaylists, notify])
   const refreshDownloads = useCallback(async () => { setDownloads(await window.myriff.listDownloads()) }, [])
   const refreshTracks = useCallback(async () => { setTracks(await window.myriff.getTracks()) }, [])
   const toggleFavorite = useCallback(async (track: Track) => { try { await window.myriff.setTrackFavorite(track.path, !track.favorite); await refreshTracks() } catch (e) { notify(e instanceof Error ? e.message : 'Could not update favourite.') } }, [refreshTracks, notify])
@@ -139,8 +172,8 @@ export default function App() {
     booted.current = true
     ;(async () => {
       try {
-        const [s, lib, pls, saved, dl] = await Promise.all([window.myriff.getSettings(), window.myriff.getTracks(), window.myriff.listPlaylists(), window.myriff.getPlayback(), window.myriff.listDownloads()])
-        setSettings(s); setLiveAccent(s.accent); setTracks(lib); setPlaylists(pls); setDownloads(dl); setVolume(saved.volume); setShuffle(saved.shuffle); setRepeat(saved.repeat); setPage(s.defaultPage || 'library')
+        const [s, lib, pls, folders, saved, dl] = await Promise.all([window.myriff.getSettings(), window.myriff.getTracks(), window.myriff.listPlaylists(), window.myriff.listPlaylistFolders(), window.myriff.getPlayback(), window.myriff.listDownloads()])
+        setSettings(s); setLiveAccent(s.accent); setTracks(lib); setPlaylists(pls); setPlaylistFolders(folders); setDownloads(dl); setVolume(saved.volume); setShuffle(saved.shuffle); setRepeat(saved.repeat); setPage(s.defaultPage || 'library')
         const all = lib
         if (saved.path) {
           const previous = all.find(t => t.path === saved.path)
@@ -201,6 +234,34 @@ export default function App() {
   const fuzzy = useMemo(() => new Fuse(tracks, { keys: ['title','artist','album','genre','folder','path'], threshold: 0.35, ignoreLocation: true }), [tracks])
   const filteredTracks = useMemo(() => globalSearch.trim() ? fuzzy.search(globalSearch).map(x => x.item) : tracks, [globalSearch, fuzzy, tracks])
   const activePlaylist = playlists.find(p => p.id === playlistId) || null
+  const visiblePlaylists = useMemo(() => playlistFolderFilter === 'all' ? playlists : playlistFolderFilter === 'unfiled' ? playlists.filter(p => p.folderId === null || p.folderId === undefined) : playlists.filter(p => p.folderId === playlistFolderFilter), [playlists, playlistFolderFilter])
+  const folderChildren = useMemo(() => {
+    const byParent = new Map<number | null, PlaylistFolder[]>()
+    for (const folder of playlistFolders) { const siblings = byParent.get(folder.parentId) || []; siblings.push(folder); byParent.set(folder.parentId, siblings) }
+    return byParent
+  }, [playlistFolders])
+  const selectPlaylistFolder = useCallback((filter: 'all' | 'unfiled' | number) => {
+    setPlaylistFolderFilter(filter)
+    const list = filter === 'all' ? playlists : filter === 'unfiled' ? playlists.filter(p => p.folderId === null || p.folderId === undefined) : playlists.filter(p => p.folderId === filter)
+    if (!list.some(p => p.id === playlistId)) setPlaylistId(list[0]?.id ?? null)
+  }, [playlists, playlistId])
+  const playlistFolderPath = (folderId: number): string => {
+    const parts: string[] = []; const seen = new Set<number>()
+    let folder = playlistFolders.find(item => item.id === folderId)
+    while (folder && !seen.has(folder.id)) { seen.add(folder.id); parts.unshift(folder.name); folder = folder.parentId === null ? undefined : playlistFolders.find(item => item.id === folder!.parentId) }
+    return parts.join(' / ')
+  }
+  const renderPlaylistFolder = (folder: PlaylistFolder, depth = 0): ReactNode => <div className="playlist-folder-node" key={folder.id}>
+    <div className={`playlist-folder-row ${playlistFolderFilter === folder.id ? 'active' : ''}`} style={{ paddingLeft: `${8 + depth * 13}px` }}>
+      <button type="button" className="playlist-folder-select" onClick={() => selectPlaylistFolder(folder.id)} title={`Show playlists in ${playlistFolderPath(folder.id)}`}><FolderOpen size={14}/><span>{folder.name}</span><small>{folder.playlistCount}</small></button>
+      <div className="playlist-folder-actions">
+        <button className="icon-button" title={`Create subfolder in ${folder.name}`} aria-label={`Create subfolder in ${folder.name}`} onClick={() => void promptCreatePlaylistFolder(folder.id)}><Plus size={12}/></button>
+        <button className="icon-button" title={`Rename ${folder.name}`} aria-label={`Rename ${folder.name}`} onClick={() => void promptRenamePlaylistFolder(folder)}><Pencil size={12}/></button>
+        <button className="icon-button danger" title={`Delete ${folder.name}`} aria-label={`Delete ${folder.name}`} onClick={() => void promptDeletePlaylistFolder(folder)}><Trash2 size={12}/></button>
+      </div>
+    </div>
+    {(folderChildren.get(folder.id) || []).map(child => renderPlaylistFolder(child, depth + 1))}
+  </div>
   useEffect(() => { if (playlistId !== null) window.myriff.getPlaylistTracks(playlistId).then(setPlaylistTracks).catch(() => setPlaylistTracks([])); else setPlaylistTracks([]) }, [playlistId, playlists])
   useEffect(() => {
     let cancelled=false; setLyrics(null); setLyricLines([]); setLyricStatus('')
