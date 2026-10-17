@@ -1,23 +1,8 @@
 import fs from 'node:fs/promises'
 import { dialog, type BrowserWindow } from 'electron'
-import type { LyricsResult, LyricLine } from '../shared/types'
+import type { LyricsResult } from '../shared/types'
+import { parseLrc } from '../shared/lrc'
 
-function parseTimestamp(raw: string) {
-  const m = raw.match(/^(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?$/)
-  if (!m) return null
-  const seconds = Number(m[1]) * 60 + Number(m[2]) + Number((m[3] || '0').padEnd(3, '0')) / 1000
-  return seconds
-}
-export function parseLrc(text: string): LyricLine[] {
-  const lines: LyricLine[] = []
-  for (const raw of text.replace(/^\uFEFF/, '').split(/\r?\n/)) {
-    const tags = [...raw.matchAll(/\[(\d{1,2}:\d{2}(?:[.:]\d{1,3})?)\]/g)]
-    const lyric = raw.replace(/\[[^\]]+\]/g, '').trim()
-    if (tags.length) for (const tag of tags) { const time = parseTimestamp(tag[1]); if (time !== null) lines.push({ time, text: lyric }) }
-    else if (lyric && !/^\w+:/i.test(lyric)) lines.push({ time: null, text: lyric })
-  }
-  return lines.sort((a, b) => (a.time ?? Number.MAX_SAFE_INTEGER) - (b.time ?? Number.MAX_SAFE_INTEGER))
-}
 export async function fetchLyrics(title: string, artist: string, album: string, duration: number): Promise<LyricsResult | null> {
   const qs = new URLSearchParams({ track_name: title, artist_name: artist })
   if (album) qs.set('album_name', album)
@@ -44,5 +29,5 @@ export async function chooseAndParseLrc(parent?: BrowserWindow | null) {
   const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
   if (result.canceled || !result.filePaths[0]) return null
   const content = await fs.readFile(result.filePaths[0], 'utf8')
-  return { lines: parseLrc(content), path: result.filePaths[0], synced: /\[\d{1,2}:\d{2}/.test(content) }
+  return { lines: parseLrc(content), path: result.filePaths[0], synced: /\[\d{1,2}:\d{2}|<\d{1,2}:\d{2}/.test(content) }
 }

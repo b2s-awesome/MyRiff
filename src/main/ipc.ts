@@ -206,11 +206,16 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
   ipcMain.handle('playlist:source-sync', (event, id: number) => {
     const source = listPlaylistSources().find(item => item.id === id)
     if (!source) throw new Error('Saved playlist source not found.')
-    const jobId = startDownload(source.url, source.format, store.getSettings(), progress => { const p = { ...progress, includePlaylist: true }; saveDownloadJob(p); if (!event.sender.isDestroyed()) event.sender.send('download:progress', p) }, async (filePath, title, downloadId, sourceUrl, fmt) => {
+    const jobId = startDownload(source.url, source.format, store.getSettings(), progress => {
+      const p = { ...progress, includePlaylist: true }
+      saveDownloadJob(p)
+      if (!event.sender.isDestroyed()) event.sender.send('download:progress', p)
+      // Do not advance last-synced until the actual download completes.
+      if (p.status === 'finished') touchPlaylistSource(id)
+    }, async (filePath, title, downloadId, sourceUrl, fmt) => {
       store.addDownload({ id: downloadId, title, filePath, sourceUrl, format: fmt })
       try { await scanMusicFolder(path.dirname(filePath)) } catch (err) { console.warn('Downloaded file metadata scan failed:', err) }
     }, true)
-    touchPlaylistSource(id)
     return jobId
   })
   ipcMain.handle('stream:search', async (_e, query: string, source: StreamSource) => searchStreams(query, source, store.getSettings()))

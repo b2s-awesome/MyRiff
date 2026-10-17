@@ -291,9 +291,33 @@ test('OS media-session controls expose track metadata, transport, seek actions a
   assert.match(app, /mediaSession\.setPositionState/)
 })
 
-test('scheduled playlist sync only advances its last-synced time after success', () => {
+test('scheduled and manual playlist sync only mark sources synced after successful completion', () => {
   const ipc = read('src/main/ipc.ts')
   assert.match(ipc, /scheduledPlaylistSources\.delete\(source\.id\)[\s\S]{0,100}if \(progress\.status === 'finished'\) touchPlaylistSource\(source\.id\)/)
+  const manual = ipc.slice(ipc.indexOf("ipcMain.handle('playlist:source-sync'"), ipc.indexOf("ipcMain.handle('stream:search'"))
+  assert.match(manual, /if \(p\.status === 'finished'\) touchPlaylistSource\(id\)/)
+  const callbackTail = manual.slice(manual.indexOf('}, true)'))
+  assert.doesNotMatch(callbackTail, /touchPlaylistSource/)
+})
+
+test('Downloads page restores persisted jobs and can retry interrupted jobs after restart', () => {
+  const app = read('src/renderer/src/App.tsx')
+  assert.match(app, /window\.myriff\.getDownloadJobs\(\)\.catch\(\(\) => \[\]\)/)
+  assert.match(app, /setDownloadJobs\(savedJobs\.slice\(0, 50\)\)/)
+  assert.match(app, /const retryDownloadJob = async \(job: DownloadProgress\)/)
+  assert.match(app, /job\.includePlaylist \? await window\.myriff\.startPlaylistDownload/)
+  assert.match(app, /job\.status === 'paused' \|\| job\.status === 'error' \|\| job\.status === 'cancelled'/)
+})
+
+test('Enhanced LRC lyrics use authored word timestamps and preserve a line-only fallback', () => {
+  const types = read('src/shared/types.ts')
+  const parser = read('src/shared/lrc.ts')
+  const app = read('src/renderer/src/App.tsx')
+  assert.match(types, /export interface LyricWord \{ time: number; text: string \}/)
+  assert.match(parser, /wordTags =/)
+  assert.match(parser, /words/)
+  assert.match(app, /line\.words\?\.length \? renderTimedKaraokeWords/)
+  assert.match(app, /function renderTimedKaraokeWords/)
 })
 
 test('Sound Lab supports adjustable EQ bandwidth and stereo width in live and offline audio', () => {

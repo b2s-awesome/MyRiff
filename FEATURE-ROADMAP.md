@@ -36,7 +36,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Local playlist import/export (M3U, CSV, TXT), TuneMyMusic external transfer route.
 - [x] Existing-library matching report and unmatched-entry reporting.
 - [x] Opt-in scheduler for periodic playlist sync with a configurable interval; runs while the app is open. Per-source rules and richer notifications remain partial.
-- [x] FIFO download queue with a consistent global concurrency cap, plus pause/cancel handling and regression coverage. Automatic interrupted-job recovery/resume after restart remains unverified.
+- [x] FIFO download queue with a consistent global concurrency cap, pause/cancel handling, persisted activity and a Downloads-page retry/resume action after restart. Retrying reuses the source URL and format; partial-file continuation depends on yt-dlp and the source.
 - [ ] Automatic metadata/art enrichment after download with confidence review.
 - [ ] Spotify/Apple Music playlist resolution is conditional on public access/exported playlist metadata; no unsupported private API or DRM bypass.
 
@@ -46,7 +46,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Waveform preview, section timestamps, LRCLIB lookup, LRC import, synced line highlight, manual timing and heuristic auto-timing.
 - [x] Draggable waveform trim selection, 0.1-second snapping and undo/redo for waveform range changes.
 - [x] Waveform zoom/pan with global-time mapping, draggable trim ranges, 0.1-second snapping and range undo/redo. Transient-aware snapping and persisted non-destructive edit sessions remain planned.
-- [ ] True word-level lyric timing and external lyric-provider plug-in interface. An approximate karaoke preview now distributes word highlights across the interval between timed lyric lines; it is a visual estimate, not authored per-word timestamps.
+- [x] Import and display authored per-word timestamps from Enhanced LRC files; line-only lyrics retain the approximate karaoke preview. Automatic speech alignment that generates word timestamps and an external lyric-provider plug-in interface remain planned.
 - [ ] Independent effect rendering per effect-chain order in offline exports.
 
 ## Discovery and integrations
