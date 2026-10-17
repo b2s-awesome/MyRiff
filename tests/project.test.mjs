@@ -290,3 +290,8 @@ test('OS media-session controls expose track metadata, transport, seek actions a
   assert.match(app, /mediaSession\.playbackState =/)
   assert.match(app, /mediaSession\.setPositionState/)
 })
+
+test('scheduled playlist sync only advances its last-synced time after success', () => {
+  const ipc = read('src/main/ipc.ts')
+  assert.match(ipc, /scheduledPlaylistSources\.delete\(source\.id\)[\s\S]{0,100}if \(progress\.status === 'finished'\) touchPlaylistSource\(source\.id\)/)
+})
