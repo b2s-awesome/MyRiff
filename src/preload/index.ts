@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppSettings, DownloadProgress, EditorRequest, PlaybackState, SearchResult, StreamSource, Track, Playlist, LyricsResult, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, DuplicateGroup, MetadataSuggestion, RemotePlaylistPreview, SavedPlaylistSource } from '../shared/types'
+import type { AppSettings, DownloadProgress, EditorRequest, PlaybackState, SearchResult, StreamSource, Track, Playlist, PlaylistFolder, LyricsResult, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, DuplicateGroup, MetadataSuggestion, RemotePlaylistPreview, SavedPlaylistSource } from '../shared/types'
 
 const api = {
   selectMusicFolder: () => ipcRenderer.invoke('dialog:music-folder') as Promise<string | null>,
@@ -21,6 +21,11 @@ const api = {
   createPlaylist: (name: string) => ipcRenderer.invoke('playlist:create', name) as Promise<Playlist>,
   renamePlaylist: (id: number, name: string) => ipcRenderer.invoke('playlist:rename', id, name) as Promise<Playlist[]>,
   deletePlaylist: (id: number) => ipcRenderer.invoke('playlist:delete', id) as Promise<Playlist[]>,
+  listPlaylistFolders: () => ipcRenderer.invoke('playlist:folder-list') as Promise<PlaylistFolder[]>,
+  createPlaylistFolder: (name: string, parentId: number | null = null) => ipcRenderer.invoke('playlist:folder-create', name, parentId) as Promise<PlaylistFolder>,
+  renamePlaylistFolder: (id: number, name: string) => ipcRenderer.invoke('playlist:folder-rename', id, name) as Promise<PlaylistFolder[]>,
+  deletePlaylistFolder: (id: number) => ipcRenderer.invoke('playlist:folder-delete', id) as Promise<PlaylistFolder[]>,
+  movePlaylistToFolder: (playlistId: number, folderId: number | null) => ipcRenderer.invoke('playlist:move-to-folder', playlistId, folderId) as Promise<Playlist[]>,
   addPlaylistTracks: (id: number, paths: string[]) => ipcRenderer.invoke('playlist:add', id, paths) as Promise<Track[]>,
   removePlaylistTrack: (id: number, trackPath: string) => ipcRenderer.invoke('playlist:remove', id, trackPath) as Promise<Track[]>,
   listPlaylistSources: () => ipcRenderer.invoke('playlist:source-list') as Promise<SavedPlaylistSource[]>,
