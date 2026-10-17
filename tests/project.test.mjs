@@ -248,6 +248,22 @@ test('build workflow smoke-tests each OS and persists the lockfile after the ful
 })
 
 
+test('successful main pushes publish permanent development-channel installer downloads', () => {
+  const workflow = read('.github/workflows/publish-build-channel.yml')
+  assert.match(workflow, /workflow_run:/)
+  assert.match(workflow, /conclusion == 'success'/)
+  assert.match(workflow, /event == 'push'/)
+  assert.match(workflow, /head_branch == 'main'/)
+  assert.match(workflow, /pin resolved npm dependency graph/)
+  assert.match(workflow, /actions\/download-artifact@v4/)
+  assert.match(workflow, /run-id: \$\{\{ github\.event\.workflow_run\.id \}\}/)
+  assert.match(workflow, /pattern: myriff-\*/)
+  assert.match(workflow, /tag_name: build-\$\{\{ github\.event\.workflow_run\.run_number \}\}/)
+  assert.match(workflow, /prerelease: true/)
+  assert.match(workflow, /make_latest: false/)
+  assert.match(workflow, /fail_on_unmatched_files: true/)
+})
+
 test('metadata provider setting disables online lookup and optional auto-suggestions stay review-first', () => {
   const ipc = read('src/main/ipc.ts')
   const page = read('src/renderer/src/components/PowerToolsPage.tsx')
