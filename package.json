@@ -23,7 +23,7 @@
     "verify": "npm run lint:source && npm run lint:syntax && npm test && npm run typecheck && npm run build"
   },
   "dependencies": {
-    "better-sqlite3": "11.10.0",
+    "better-sqlite3": "13.0.3",
     "discord-rpc": "4.0.1",
     "fuse.js": "7.1.0",
     "lucide-react": "0.468.0",
