@@ -49,6 +49,30 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, '../preload/index.mjs'), contextIsolation: true, nodeIntegration: false, sandbox: false }
   })
   mainWindow.once('ready-to-show', () => mainWindow?.show())
+  if (process.env.MYRIFF_SMOKE_MARKER && mainWindow) {
+    const smokeWindow = mainWindow
+    smokeWindow.webContents.once('did-finish-load', () => {
+      void (async () => {
+        try {
+          const ready = await smokeWindow.webContents.executeJavaScript(
+            "Boolean(document.querySelector('#root') && window.myriff && typeof window.myriff.getSettings === 'function')"
+          )
+          if (!ready) throw new Error('Renderer root or preload API did not initialise.')
+          await fs.writeFile(process.env.MYRIFF_SMOKE_MARKER!, JSON.stringify({
+            ok: true, rendererLoaded: true, preloadApi: true, platform: process.platform
+          }), 'utf8')
+          setTimeout(() => app.quit(), 400)
+        } catch (error) {
+          try {
+            await fs.writeFile(process.env.MYRIFF_SMOKE_MARKER!, JSON.stringify({
+              ok: false, error: error instanceof Error ? error.message : String(error)
+            }), 'utf8')
+          } catch { /* the test runner will fail on its marker timeout */ }
+          app.exit(1)
+        }
+      })()
+    })
+  }
   if (process.env.ELECTRON_RENDERER_URL) mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   else mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   mainWindow.on('closed', () => { mainWindow = null })
