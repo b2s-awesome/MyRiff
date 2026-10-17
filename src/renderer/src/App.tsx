@@ -269,6 +269,7 @@ export default function App() {
     clearCrossfade()
     const entry: CrossfadeEntry = { track, source: '', phase: 'loading', fadeSeconds: 0 }
     crossfadeRef.current = entry
+    let cancelled = false
     ;(async () => {
       const source = track.streamUrl ? await window.myriff.playStream(track.streamUrl) : await window.myriff.mediaUrl(track.path)
       if (cancelled || crossfadeRef.current !== entry) return
@@ -281,7 +282,6 @@ export default function App() {
         console.debug('MyRiff crossfade preload failed; normal next-track playback remains available.', error)
       }
     })
-    let cancelled = false
     return () => { cancelled = true }
   }, [current?.path, current?.streamUrl, queue, playContext, repeat, shuffle, settings?.crossfadeSeconds, crossfadeEpoch, peekNextTrack, clearCrossfade])
 
