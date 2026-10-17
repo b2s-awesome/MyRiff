@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import path from 'node:path'
 import fs from 'node:fs'
-import type { AppSettings, PlaybackState, Playlist, Track, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, AudioProfile, DownloadProgress, SavedPlaylistSource } from '../shared/types'
+import type { AppSettings, PlaybackState, Playlist, PlaylistFolder, Track, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, AudioProfile, DownloadProgress, SavedPlaylistSource } from '../shared/types'
 
 const defaults: AppSettings = {
   musicFolder: '', theme: 'dark', accent: '#b69cff', dynamicAccent: true, downloadFormat: 'opus', downloadQuality: '0',
@@ -35,7 +35,15 @@ export function initDatabase(userDataDir: string) {
       artwork_key TEXT, folder TEXT NOT NULL DEFAULT '', added_at INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS artworks (key TEXT PRIMARY KEY, path TEXT NOT NULL, mime TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS playlists (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS playlist_folders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+      parent_id INTEGER REFERENCES playlist_folders(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS playlists (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL,
+      folder_id INTEGER REFERENCES playlist_folders(id) ON DELETE SET NULL
+    );
     CREATE TABLE IF NOT EXISTS playlist_tracks (
       playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
       track_path TEXT NOT NULL REFERENCES tracks(path) ON DELETE CASCADE,
@@ -76,6 +84,10 @@ export function initDatabase(userDataDir: string) {
     CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
     CREATE INDEX IF NOT EXISTS idx_playlist_position ON playlist_tracks(playlist_id, position);
   `)
+  // Migrate library schema for existing MyRiff databases.
+  try { db.exec('ALTER TABLE playlists ADD COLUMN folder_id INTEGER REFERENCES playlist_folders(id) ON DELETE SET NULL') } catch { /* Column already exists. */ }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_playlist_folder ON playlists(folder_id)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_playlist_folder_parent ON playlist_folders(parent_id)')
   // Migrate download job columns for databases created by earlier MyRiff builds.
   for (const statement of [
     'ALTER TABLE download_jobs ADD COLUMN completed INTEGER NOT NULL DEFAULT 0',
@@ -148,8 +160,61 @@ export function createPlaylist(name: string): Playlist {
   return listPlaylists().find(p => p.id === Number(result.lastInsertRowid) )!
 }
 export function listPlaylists(): Playlist[] {
-  return db.prepare(`SELECT p.id,p.name,p.created_at AS createdAt,COUNT(pt.track_path) AS trackCount FROM playlists p LEFT JOIN playlist_tracks pt ON pt.playlist_id=p.id GROUP BY p.id ORDER BY p.name COLLATE NOCASE`).all() as Playlist[]
+  return db.prepare(`SELECT p.id,p.name,p.created_at AS createdAt,p.folder_id AS folderId,COUNT(pt.track_path) AS trackCount FROM playlists p LEFT JOIN playlist_tracks pt ON pt.playlist_id=p.id GROUP BY p.id ORDER BY p.name COLLATE NOCASE`).all() as Playlist[]
 }
+
+export function listPlaylistFolders(): PlaylistFolder[] {
+  return db.prepare(`SELECT f.id,f.name,f.parent_id AS parentId,f.created_at AS createdAt,COUNT(p.id) AS playlistCount FROM playlist_folders f LEFT JOIN playlists p ON p.folder_id=f.id GROUP BY f.id ORDER BY f.name COLLATE NOCASE`).all() as PlaylistFolder[]
+}
+
+export function createPlaylistFolder(name: string, parentId: number | null = null): PlaylistFolder {
+  const clean = name.trim()
+  if (!clean || clean.length > 80) throw new Error('Folder names must contain between 1 and 80 characters.')
+  if (parentId !== null && !db.prepare('SELECT 1 FROM playlist_folders WHERE id=?').get(parentId)) throw new Error('The parent folder no longer exists.')
+  const duplicate = parentId === null
+    ? db.prepare('SELECT 1 FROM playlist_folders WHERE parent_id IS NULL AND lower(name)=lower(?)').get(clean)
+    : db.prepare('SELECT 1 FROM playlist_folders WHERE parent_id=? AND lower(name)=lower(?)').get(parentId, clean)
+  if (duplicate) throw new Error('A folder with this name already exists at that level.')
+  const result = db.prepare('INSERT INTO playlist_folders(name,parent_id,created_at) VALUES(?,?,?)').run(clean, parentId, Date.now())
+  return listPlaylistFolders().find(folder => folder.id === Number(result.lastInsertRowid))!
+}
+
+export function renamePlaylistFolder(id: number, name: string): PlaylistFolder[] {
+  const clean = name.trim()
+  if (!clean || clean.length > 80) throw new Error('Folder names must contain between 1 and 80 characters.')
+  const current = db.prepare('SELECT id,parent_id FROM playlist_folders WHERE id=?').get(id) as {id:number; parent_id:number|null}|undefined
+  if (!current) throw new Error('The folder no longer exists.')
+  const duplicate = current.parent_id === null
+    ? db.prepare('SELECT 1 FROM playlist_folders WHERE parent_id IS NULL AND id<>? AND lower(name)=lower(?)').get(id, clean)
+    : db.prepare('SELECT 1 FROM playlist_folders WHERE parent_id=? AND id<>? AND lower(name)=lower(?)').get(current.parent_id, id, clean)
+  if (duplicate) throw new Error('A folder with this name already exists at that level.')
+  db.prepare('UPDATE playlist_folders SET name=? WHERE id=?').run(clean, id)
+  return listPlaylistFolders()
+}
+
+export function deletePlaylistFolder(id: number): PlaylistFolder[] {
+  if (!db.prepare('SELECT 1 FROM playlist_folders WHERE id=?').get(id)) return listPlaylistFolders()
+  const descendants = db.prepare(`WITH RECURSIVE folder_tree(id) AS (
+    SELECT id FROM playlist_folders WHERE id=?
+    UNION ALL SELECT f.id FROM playlist_folders f JOIN folder_tree parent ON f.parent_id=parent.id
+  ) SELECT id FROM folder_tree`).all(id) as {id:number}[]
+  const tx = db.transaction(() => {
+    // Deleting a folder removes its folder subtree, but preserves every playlist by returning it to Unfiled.
+    const clear = db.prepare('UPDATE playlists SET folder_id=NULL WHERE folder_id=?')
+    descendants.forEach(folder => clear.run(folder.id))
+    db.prepare('DELETE FROM playlist_folders WHERE id=?').run(id)
+  })
+  tx()
+  return listPlaylistFolders()
+}
+
+export function movePlaylistToFolder(playlistId: number, folderId: number | null): Playlist[] {
+  if (!db.prepare('SELECT 1 FROM playlists WHERE id=?').get(playlistId)) throw new Error('The playlist no longer exists.')
+  if (folderId !== null && !db.prepare('SELECT 1 FROM playlist_folders WHERE id=?').get(folderId)) throw new Error('The destination folder no longer exists.')
+  db.prepare('UPDATE playlists SET folder_id=? WHERE id=?').run(folderId, playlistId)
+  return listPlaylists()
+}
+
 export function renamePlaylist(id: number, name: string) {
   if (!name.trim()) throw new Error('Playlist name cannot be empty')
   db.prepare('UPDATE playlists SET name=? WHERE id=?').run(name.trim(), id)
@@ -267,7 +332,7 @@ export function exportBackupObject() {
   return {
     format: 'myriff-backup', version: 1, exportedAt: new Date().toISOString(), settings: getSettings(), playback: getPlayback(),
     tracks: db.prepare('SELECT * FROM tracks').all(), artworks: db.prepare('SELECT * FROM artworks').all(),
-    trackStats: db.prepare('SELECT * FROM track_stats').all(), playlists: db.prepare('SELECT * FROM playlists').all(),
+    trackStats: db.prepare('SELECT * FROM track_stats').all(), playlistFolders: db.prepare('SELECT * FROM playlist_folders').all(), playlists: db.prepare('SELECT * FROM playlists').all(),
     playlistTracks: db.prepare('SELECT * FROM playlist_tracks').all(), smartPlaylists: db.prepare('SELECT * FROM smart_playlists').all(),
     bookmarks: db.prepare('SELECT * FROM bookmarks').all(), history: db.prepare('SELECT * FROM listening_history').all(),
     lyrics: db.prepare('SELECT * FROM lyrics').all(), downloads: db.prepare('SELECT * FROM downloads').all()
@@ -284,7 +349,23 @@ export function restoreBackupObject(backup: any) {
     for (const row of Array.isArray(backup.trackStats) ? backup.trackStats : []) if (isKnownTrack(row.path)) db.prepare('INSERT OR REPLACE INTO track_stats(path,favorite,rating,play_count,last_played,replay_gain_db,file_size) VALUES(?,?,?,?,?,?,?)').run(row.path,row.favorite,row.rating,row.play_count,row.last_played,row.replay_gain_db,row.file_size)
     for (const [key,value] of Object.entries(backup.settings ?? {})) if (key in defaults) db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key,JSON.stringify(value))
     if (backup.playback) setPlayback(backup.playback)
-    for (const row of Array.isArray(backup.playlists) ? backup.playlists : []) db.prepare('INSERT OR IGNORE INTO playlists(id,name,created_at) VALUES(?,?,?)').run(row.id,row.name,row.created_at)
+    const pendingFolders = Array.isArray(backup.playlistFolders) ? [...backup.playlistFolders].sort((a, b) => Number(a.id) - Number(b.id)) : []
+    while (pendingFolders.length) {
+      const before = pendingFolders.length
+      for (let i = pendingFolders.length - 1; i >= 0; i--) {
+        const row = pendingFolders[i]
+        const parentId = row.parent_id ?? null
+        if (parentId !== null && !db.prepare('SELECT 1 FROM playlist_folders WHERE id=?').get(parentId)) continue
+        db.prepare('INSERT OR IGNORE INTO playlist_folders(id,name,parent_id,created_at) VALUES(?,?,?,?)').run(row.id,row.name,parentId,row.created_at)
+        pendingFolders.splice(i, 1)
+      }
+      if (pendingFolders.length === before) break // Skip malformed orphaned folder records instead of blocking the entire restore.
+    }
+    for (const row of Array.isArray(backup.playlists) ? backup.playlists : []) {
+      const requestedFolderId = row.folder_id ?? null
+      const folderId = requestedFolderId !== null && db.prepare('SELECT 1 FROM playlist_folders WHERE id=?').get(requestedFolderId) ? requestedFolderId : null
+      db.prepare('INSERT OR IGNORE INTO playlists(id,name,created_at,folder_id) VALUES(?,?,?,?)').run(row.id,row.name,row.created_at,folderId)
+    }
     for (const row of Array.isArray(backup.playlistTracks) ? backup.playlistTracks : []) if (isKnownTrack(row.track_path)) db.prepare('INSERT OR IGNORE INTO playlist_tracks(playlist_id,track_path,position) VALUES(?,?,?)').run(row.playlist_id,row.track_path,row.position)
     for (const row of Array.isArray(backup.smartPlaylists) ? backup.smartPlaylists : []) db.prepare('INSERT OR IGNORE INTO smart_playlists(id,name,rules_json,match_mode,created_at) VALUES(?,?,?,?,?)').run(row.id,row.name,row.rules_json,row.match_mode,row.created_at)
     for (const row of Array.isArray(backup.bookmarks) ? backup.bookmarks : []) if (isKnownTrack(row.track_path)) db.prepare('INSERT OR IGNORE INTO bookmarks(id,track_path,position,label,created_at) VALUES(?,?,?,?,?)').run(row.id,row.track_path,row.position,row.label,row.created_at)
