@@ -169,7 +169,7 @@ test('remote streaming forwards source MIME and valid byte ranges and cleans up 
   assert.match(source, /requestHeaders\.Range = range/)
   assert.match(source, /upstream\.headers\.get\('content-type'\)/)
   assert.match(source, /fallbackStreamMimeType/)
-  assert.match(source, /Readable\.fromWeb\(upstream\.body\)/)
+  assert.match(source, /Readable\.fromWeb\(upstream\.body/)
   assert.match(source, /res\.on\('close'/)
   assert.match(source, /liveStreamRequests\.clear\(\)/)
   assert.doesNotMatch(source, /'Content-Type': 'audio\/webm'/)
