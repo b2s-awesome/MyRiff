@@ -13,7 +13,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Duplicate scan by file hash and metadata; CSV inventory export.
 - [x] Metadata suggestions from MusicBrainz and tagged-copy export rather than in-place edits.
 - [ ] One-click undo for library metadata operations. Bulk tag editor is implemented as non-destructive multi-track tagged-copy export; it does not overwrite original files.
-- [ ] Persistent playlist folders/nesting and full drag-and-drop playlist editor.
+- [x] Persistent nested playlist folders with safe folder reassignment/deletion and folder-aware backup restore. A complete drag-and-drop playlist editor remains planned.
 
 ## Playback and Sound Lab
 
@@ -23,8 +23,8 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] ReplayGain/loudness analysis and per-track gain metadata.
 - [x] Independent pitch shifting and tempo-preserving time stretch are wired through the SoundTouch worklet; the fallback intentionally couples pitch and speed. Needs packaged runtime/audio quality validation before being called release-ready.
 - [ ] True gapless playback across codec/platform combinations.
-- [ ] True overlapping crossfade between two simultaneously decoded tracks; current transition setting is a single-track fade approximation.
-- [ ] A/B processed-versus-original listening comparison and ordered effect-chain graph UI. The existing effects-bypass toggle is a manual comparison, not a synchronized A/B player.
+- [x] Overlapping crossfade using a preloaded second media element and shared DSP graph. Codec-specific quality needs real audio-device testing; exact sample-gapless playback remains unguaranteed.
+- [x] Same-position DSP-bypass A/B comparison and ordered effect-chain graph UI. A separate synchronised dual-deck A/B transport remains unimplemented.
 - [ ] Parametric EQ, stereo width and per-headphone/device profile wizard.
 - [ ] Native exclusive/bit-perfect output and explicit sample-rate/bit-depth controls.
 
@@ -36,7 +36,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Local playlist import/export (M3U, CSV, TXT), TuneMyMusic external transfer route.
 - [x] Existing-library matching report and unmatched-entry reporting.
 - [x] Opt-in scheduler for periodic playlist sync with a configurable interval; runs while the app is open. Per-source rules and richer notifications remain partial.
-- [ ] Truly bounded multi-job queue scheduling; pause stops yt-dlp while retaining partial files and resume starts a new continuation job. Job state is persisted and interrupted jobs are marked paused on restart, but automatic resume and end-to-end recovery validation remain.
+- [x] FIFO download queue with a consistent global concurrency cap, plus pause/cancel handling and regression coverage. Automatic interrupted-job recovery/resume after restart remains unverified.
 - [ ] Automatic metadata/art enrichment after download with confidence review.
 - [ ] Spotify/Apple Music playlist resolution is conditional on public access/exported playlist metadata; no unsupported private API or DRM bypass.
 
@@ -45,7 +45,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] FFmpeg export to a new file, trim start/end, section export, speed, reverb, distortion and gain EQ.
 - [x] Waveform preview, section timestamps, LRCLIB lookup, LRC import, synced line highlight, manual timing and heuristic auto-timing.
 - [x] Draggable waveform trim selection, 0.1-second snapping and undo/redo for waveform range changes.
-- [ ] Waveform zoom, transient-aware snapping and persisted non-destructive edit sessions.
+- [x] Waveform zoom/pan with global-time mapping, draggable trim ranges, 0.1-second snapping and range undo/redo. Transient-aware snapping and persisted non-destructive edit sessions remain planned.
 - [ ] True word-level lyric timing and external lyric-provider plug-in interface. An approximate karaoke preview now distributes word highlights across the interval between timed lyric lines; it is a visual estimate, not authored per-word timestamps.
 - [ ] Independent effect rendering per effect-chain order in offline exports.
 
@@ -69,7 +69,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] App-shortcut capture UI with collision detection and clearable bindings. Separate global-vs-app scope labels and configurable OS-global shortcut registration remain.
 - [x] Customisation profile import/export independent of the full database backup; imported values are filtered and range-validated.
 - [ ] In-app update channel and safe rollback.
-- [ ] Full dependency-aware typecheck, automated UI tests, audio playback integration tests, and verified Windows/macOS/Linux packaged builds. The local environment cannot resolve npm registry DNS, so these release gates are still blocked here.
+- [x] Dependency-aware typecheck, regression tests, renderer/main build and Windows/macOS/Linux packaging passed on GitHub Actions. This hardening branch adds a packaged renderer/preload startup smoke test for all OSes and commits the generated lockfile after a green main-branch matrix. Interactive UI automation, audio-device integration and listening-quality tests remain planned.
 
 ## Release gates
 
@@ -87,3 +87,8 @@ MyRiff should only download audio that the user is authorised to save and that t
 
 - [x] Nested playlist folders with subfolders, rename/delete, unfiled recovery and playlist reassignment.
 - [x] Folder-aware backup/export restoration with backwards compatibility for version-1 backups.
+
+
+## Release validation boundary
+
+A green GitHub Actions package matrix proves that dependencies install, TypeScript checks pass, the renderer/main bundle builds, and platform package formats are emitted. A packaged startup smoke check additionally proves the renderer root and preload bridge initialise. It does not prove every audio format plays correctly, crossfade is sample-gapless on all hardware, remote extraction always works, or every preference has been manually validated. Those still require targeted integration tests and listening tests before a 1.0 release.

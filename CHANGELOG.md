@@ -1,5 +1,16 @@
 # Changelog
 
+## Release hardening in progress
+
+- Added a packaged startup smoke-test runner that verifies the renderer root and preload bridge before requiring a clean exit.
+- Added startup smoke testing for Windows, macOS and Linux; Linux uses Xvfb.
+- Restricted CI download artifacts to installable packages rather than including unpacked app directories.
+- Added a post-matrix job to persist the exact dependency lockfile only after all validation and platform builds pass.
+- Updated documentation to distinguish successful packaging from real audio playback and hardware validation.
+
+These additional smoke/lockfile changes must pass the current branch's own Actions run before being treated as verified.
+
+
 ## Unreleased — completion pass
 
 - Added opt-in scheduled synchronisation for saved playlist sources, with configurable intervals while MyRiff is running.
@@ -14,8 +25,8 @@
 
 ## Known release blockers
 
-- No committed `package-lock.json`: the npm registry could not be resolved in the build environment, so dependency installation and lockfile generation were unavailable.
-- Full TypeScript typecheck, Electron build, native `better-sqlite3` rebuild, packaged launch and audio integration tests have not passed in this environment.
+- A committed `package-lock.json` is being added by CI only after the full main-branch validation and packaging matrix passes.
+- TypeScript typecheck, Electron build, and Windows/macOS/Linux package jobs have since passed in GitHub Actions. Packaged startup smoke tests and real audio playback/device tests remain separate gates.
 - True overlapping crossfade/gapless playback, full A/B player, parametric EQ/stereo width, waveform zoom/transient snapping, word-level karaoke lyrics, keyboard shortcut capture/conflict detection, in-app update/rollback, and full cross-platform runtime validation remain incomplete.
 
 

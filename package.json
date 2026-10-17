@@ -20,7 +20,8 @@
     "test": "node --test tests/*.test.mjs",
     "lint:source": "node scripts/source-sanity.mjs",
     "lint:syntax": "node scripts/syntax-check.mjs",
-    "verify": "npm run lint:source && npm run lint:syntax && npm test && npm run typecheck && npm run build"
+    "verify": "npm run lint:source && npm run lint:syntax && npm test && npm run typecheck && npm run build",
+    "smoke:packaged": "node scripts/smoke-packaged.mjs"
   },
   "dependencies": {
     "better-sqlite3": "13.0.3",

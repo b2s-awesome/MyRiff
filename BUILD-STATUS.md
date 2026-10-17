@@ -1,25 +1,33 @@
 # MyRiff build status
 
-Last checked: 2026-10-16.
+Last inspected: 2026-10-17.
 
-## Verified in the available environment
+## Previously verified on GitHub Actions
 
-- `npm run lint:source`: passed; 25 required files, 19 settings keys and 74 IPC invoke references checked.
-- `npm test`: passed, 15 tests.
-- `npm run lint:syntax`: passed, all 27 TypeScript/TSX source files transpiled without syntax diagnostics. The test was run using the globally installed TypeScript compiler because project dependencies were not installed.
-- Source ZIP archive integrity: passed.
+The completed package matrix at [run 39070481049](https://github.com/b2s-awesome/MyRiff/actions/runs/39070481049) passed:
 
-## Not verified
+- Dependency installation and production dependency audit.
+- Source sanity, TypeScript/TSX syntax transpilation and regression tests.
+- Full TypeScript typecheck and Electron/Vite renderer + main-process build.
+- Windows NSIS/ZIP packaging, macOS DMG/ZIP packaging, and Linux AppImage/DEB/tarball packaging.
 
-- `npm run typecheck` against installed project dependencies. The attempted check stops at TS2688 because `@types/node` and `vite/client` are unavailable without installed dependencies.
-- `npm run build` / `npm run dist:win`, `dist:mac`, `dist:linux`.
-- Launching the packaged Electron app, native `better-sqlite3` ABI rebuild, audio output and SoundTouch playback quality.
-- End-to-end playlist downloads, portable-mode data migration, bulk FFmpeg tagging, and OS integration on each platform.
+After the download scheduler was merged, [run 39071993319](https://github.com/b2s-awesome/MyRiff/actions/runs/39071993319) was also building against the updated main branch. Use the live run page for its final conclusion.
 
-## Why the native build is still blocked here
+## New hardening work on this branch
 
-The environment cannot resolve `registry.npmjs.org` (`curl` reports `Could not resolve host`) and `npm install` times out with an empty npm cache. This is a network/DNS limitation, not evidence that the app compiles. The GitHub Actions workflow now generates one lockfile on a network-enabled runner, shares it across the validation and native platform jobs, and only publishes artifacts after typecheck and packaging succeed.
+- Packaged application smoke tests for Windows, macOS and Linux. The test waits for the renderer root and preload API to initialise and then requires a clean exit.
+- Linux startup smoke tests use Xvfb.
+- CI artifacts are narrowed to installable deliverables, not the whole unpacked application tree.
+- A lockfile persistence job commits the dependency graph only after the full validation and three-platform package matrix succeeds.
 
-## Release decision
+Do not treat these new checks as passed until the branch's own GitHub Actions run completes green.
 
-**Do not treat this as a verified installer yet.** Use the workflow or a network-enabled Windows machine to complete the typecheck, package, launch and audio integration gates. Remaining functional limitations are tracked in `FEATURE-ROADMAP.md`.
+## Still not proven by CI
+
+- Listening tests with local music files and physical audio outputs, including crossfade quality across codecs.
+- Provider-specific stream/playlist extraction reliability, which can change independently of this application.
+- Full automated UI interaction/accessibility coverage and upgrade/rollback validation.
+- Code signing and notarisation. Windows and macOS packages may show platform security prompts.
+- All features marked partial or planned in `FEATURE-ROADMAP.md`.
+
+A green package build plus a startup smoke test is a meaningful release gate, but is not proof that every advanced feature has been manually validated.

@@ -125,7 +125,7 @@ test('CI resolves one npm lockfile and shares it across validation and native pl
   assert.match(workflow, /ubuntu-latest/)
   assert.match(workflow, /npm audit --omit=dev --audit-level=high/)
   assert.match(workflow, /Smoke-test packaged Linux app under Xvfb/)
-  assert.match(workflow, /Smoke-test packaged Windows app/)
+  assert.match(workflow, /Smoke-test packaged app on Windows\/macOS/)
   assert.match(workflow, /cancel-in-progress: true/)
 })
 
@@ -217,4 +217,32 @@ test('playlist folders are nested, survive backup restore, and never delete sour
   assert.match(app, /renderPlaylistFolder/)
   assert.match(app, /Move playlist to folder/)
   assert.match(app, /preserved in Unfiled/)
+})
+
+
+test('packaged smoke test verifies renderer and preload initialization with bounded timeout', () => {
+  const main = read('src/main/index.ts')
+  const script = read('scripts/smoke-packaged.mjs')
+  assert.match(main, /MYRIFF_SMOKE_MARKER/)
+  assert.match(main, /did-finish-load/)
+  assert.ok(main.includes('window.myriff'))
+  assert.match(script, /30_000/)
+  assert.match(script, /rendererLoaded/)
+  assert.match(script, /preloadApi/)
+  assert.match(script, /linux-unpacked/)
+  assert.match(script, /win-unpacked/)
+  assert.ok(script.includes("Contents', 'MacOS', 'MyRiff'"))
+})
+
+test('build workflow smoke-tests each OS and persists the lockfile after the full platform matrix', () => {
+  const workflow = read('.github/workflows/build.yml')
+  assert.match(workflow, /npm run smoke:packaged/)
+  assert.match(workflow, /xvfb-run --auto-servernum npm run smoke:packaged/)
+  assert.ok(workflow.includes("artifact_path: 'release/*.exe'"))
+  assert.ok(workflow.includes("artifact_path: 'release/*.dmg'"))
+  assert.ok(workflow.includes('release/*.AppImage'))
+  assert.ok(workflow.includes('persist-lockfile:'))
+  assert.ok(workflow.includes('needs: [resolve-dependencies, validate, build]'))
+  assert.ok(workflow.includes('git push origin HEAD:main'))
+  assert.ok(!workflow.includes(['name: dependency-lock', '          path: release-assets'].join('\n')))
 })
