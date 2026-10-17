@@ -234,7 +234,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
   })
   ipcMain.handle('editor:export', async (event, request: EditorRequest) => exportEditedAudio(request, store.getSettings(), percent => event.sender.send('editor:progress', percent)))
   ipcMain.handle('lyrics:search', async (_e, title: string, artist: string, album: string, duration: number) => fetchLyrics(title, artist, album, duration))
-  ipcMain.handle('lyrics:import', async () => chooseAndParseLrc(parent()))
+  ipcMain.handle('lyrics:import', async () => chooseAndParseLrc(win()))
   ipcMain.handle('lyrics:get', (_e, trackPath: string) => store.getLyrics(trackPath))
   ipcMain.handle('lyrics:save', (_e, trackPath: string, lines: unknown[]) => store.saveLyrics(trackPath, lines))
   ipcMain.handle('discord:update', async (_e, track) => {
