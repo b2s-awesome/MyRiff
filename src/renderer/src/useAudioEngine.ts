@@ -170,9 +170,9 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
     const reverb = Math.max(0, Math.min(1, settings.effectReverb))
     if (dryRef.current) dryRef.current.gain.setTargetAtTime(bypass ? 1 : 1 - reverb * .45, now, .03)
     if (wetRef.current) wetRef.current.gain.setTargetAtTime(bypass ? 0 : reverb * .8, now, .03)
+    const tempo = Math.max(0.5, Math.min(2, settings.effectTempo))
+    const pitch = Math.max(-24, Math.min(24, settings.effectPitch))
     if (audioRef.current) {
-      const tempo = Math.max(0.5, Math.min(2, settings.effectTempo))
-      const pitch = Math.max(-24, Math.min(24, settings.effectPitch))
       if (soundTouchRef.current) {
         audioRef.current.preservesPitch = true
         audioRef.current.playbackRate = 1
