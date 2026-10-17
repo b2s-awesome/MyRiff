@@ -27,6 +27,8 @@ export default function EffectsPanel({ settings, onChange }: { settings: AppSett
       <p className="subtle-note"><Waves size={15}/> A/B toggles the DSP bypass without seeking or restarting the track, so you can compare the same passage.</p>
     </div>
     <div className="effects-card control-grid">
+      <Control title="EQ bandwidth (Q)" value={settings.eqQ} min={0.3} max={8} step={0.1} display={settings.eqQ.toFixed(1)} onChange={v => onChange({ eqQ: v })}/>
+      <Control title="Stereo width" value={settings.stereoWidth} min={0} max={2} step={0.05} display={Math.abs(settings.stereoWidth - 1) < 0.025 ? 'Neutral' : settings.stereoWidth < 1 ? `${Math.round(settings.stereoWidth*100)}% narrow` : `${Math.round(settings.stereoWidth*100)}% wide`} onChange={v => onChange({ stereoWidth: v })}/>
       <Control title="Tempo" value={settings.effectTempo} min={0.5} max={2} step={0.05} display={`${settings.effectTempo.toFixed(2)}×`} onChange={v => onChange({ effectTempo: v })}/>
       <Control title="Pitch shift" value={settings.effectPitch} min={-12} max={12} step={1} display={`${settings.effectPitch > 0 ? '+' : ''}${settings.effectPitch} st`} onChange={v => onChange({ effectPitch: v })}/>
       <Control title="Reverb" value={settings.effectReverb} min={0} max={1} step={0.02} display={settings.effectReverb === 0 ? 'Off' : `${Math.round(settings.effectReverb*100)}% wet`} onChange={v => onChange({ effectReverb: v })}/>
