@@ -242,6 +242,22 @@ export function reorderPlaylistTracks(id: number, orderedPaths: string[]) {
   if (!db.prepare('SELECT 1 FROM playlists WHERE id=?').get(id)) throw new Error('Playlist not found.')
   if (new Set(orderedPaths).size !== orderedPaths.length) throw new Error('A playlist cannot contain duplicate entries in its order.')
   const currentPaths = (db.prepare('SELECT track_path FROM playlist_tracks WHERE playlist_id=? ORDER BY position').all(id) as { track_path: string }[]).map(row => row.track_path)
+  if (currentPaths.length !== orderedPaths.length || currentPaths.some(trackPath => !orderedPaths.includes(trackPath))) {
+    throw new Error('This playlist changed while you were editing it. Refresh the playlist and try again.')
+  }
+  const setPosition = db.prepare('UPDATE playlist_tracks SET position=? WHERE playlist_id=? AND track_path=?')
+  const tx = db.transaction(() => orderedPaths.forEach((trackPath, index) => setPosition.run(index, id, trackPath)))
+  tx()
+  return getPlaylistTracks(id)
+}
+export function reorderPlaylistTracks(id: number, orderedPaths: string[]) {
+  if (!Number.isInteger(id) || id < 1) throw new Error('Choose a valid playlist.')
+  if (!Array.isArray(orderedPaths) || orderedPaths.length > 5000 || orderedPaths.some(p => typeof p !== 'string' || !p || p.length > 32768)) {
+    throw new Error('The playlist order is invalid or too large.')
+  }
+  if (!db.prepare('SELECT 1 FROM playlists WHERE id=?').get(id)) throw new Error('Playlist not found.')
+  if (new Set(orderedPaths).size !== orderedPaths.length) throw new Error('A playlist cannot contain duplicate entries in its order.')
+  const currentPaths = (db.prepare('SELECT track_path FROM playlist_tracks WHERE playlist_id=? ORDER BY position').all(id) as { track_path: string }[]).map(row => row.track_path)
   if (currentPaths.length !== orderedPaths.length || currentPaths.some(p => !orderedPaths.includes(p))) {
     throw new Error('This playlist changed while you were editing it. Refresh the playlist and try again.')
   }
