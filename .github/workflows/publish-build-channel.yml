@@ -1,0 +1,54 @@
+name: Publish MyRiff build channel
+
+on:
+  workflow_run:
+    workflows: ["Build MyRiff"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    name: Publish verified main build
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      !contains(github.event.workflow_run.head_commit.message, 'pin resolved npm dependency graph')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download verified platform packages
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+          pattern: myriff-*
+          path: release-assets
+          merge-multiple: true
+      - name: Confirm the build produced release files
+        shell: bash
+        run: |
+          if ! find release-assets -type f -print -quit | grep -q .; then
+            echo "::error::The successful build run contained no downloadable installer artifacts."
+            exit 1
+          fi
+      - name: Publish downloadable pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.event.workflow_run.run_number }}
+          target_commitish: ${{ github.event.workflow_run.head_sha }}
+          name: MyRiff build ${{ github.event.workflow_run.run_number }}
+          body: |
+            Automated pre-release built from the `main` branch.
+
+            Source commit: ${{ github.event.workflow_run.head_sha }}
+
+            This is a development-channel pre-release, not a stable version. It is published only after the main-branch dependency audit, tests, TypeScript checks, native packaging, and packaged-startup smoke tests pass on Windows, macOS, and Linux.
+          prerelease: true
+          make_latest: false
+          generate_release_notes: true
+          files: release-assets/*
+          fail_on_unmatched_files: true
