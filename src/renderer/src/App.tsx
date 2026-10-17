@@ -49,6 +49,8 @@ export default function App() {
   const [globalSearch, setGlobalSearch] = useState('')
   const [playlistId, setPlaylistId] = useState<number | null>(null)
   const [playlistTracks, setPlaylistTracks] = useState<Track[]>([])
+  const [draggedPlaylistTrackPath, setDraggedPlaylistTrackPath] = useState<string | null>(null)
+  const [playlistDropTargetPath, setPlaylistDropTargetPath] = useState<string | null>(null)
   const [current, setCurrent] = useState<PlayableTrack | null>(null)
   const [playContext, setPlayContext] = useState<PlayableTrack[]>([])
   const [queue, setQueue] = useState<PlayableTrack[]>([])
@@ -234,6 +236,34 @@ export default function App() {
   const fuzzy = useMemo(() => new Fuse(tracks, { keys: ['title','artist','album','genre','folder','path'], threshold: 0.35, ignoreLocation: true }), [tracks])
   const filteredTracks = useMemo(() => globalSearch.trim() ? fuzzy.search(globalSearch).map(x => x.item) : tracks, [globalSearch, fuzzy, tracks])
   const activePlaylist = playlists.find(p => p.id === playlistId) || null
+  const reorderPlaylistEntry = useCallback(async (sourcePath: string, targetPath: string) => {
+    if (!activePlaylist || sourcePath === targetPath) return
+    const orderedPaths = playlistTracks.map(track => track.path)
+    const sourceIndex = orderedPaths.indexOf(sourcePath)
+    const targetIndex = orderedPaths.indexOf(targetPath)
+    if (sourceIndex < 0 || targetIndex < 0) {
+      notify('This playlist changed while you were reordering it. Refresh and try again.')
+      return
+    }
+    orderedPaths.splice(sourceIndex, 1)
+    orderedPaths.splice(targetIndex, 0, sourcePath)
+    try {
+      const reordered = await window.myriff.reorderPlaylistTracks(activePlaylist.id, orderedPaths)
+      setPlaylistTracks(reordered)
+      await refreshPlaylists()
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not reorder the playlist.')
+      try { setPlaylistTracks(await window.myriff.getPlaylistTracks(activePlaylist.id)) } catch { /* preserve the last rendered list */ }
+    } finally {
+      setDraggedPlaylistTrackPath(null)
+      setPlaylistDropTargetPath(null)
+    }
+  }, [activePlaylist?.id, playlistTracks, refreshPlaylists, notify])
+  const movePlaylistEntry = useCallback((index: number, offset: -1 | 1) => {
+    const target = index + offset
+    if (target < 0 || target >= playlistTracks.length) return
+    void reorderPlaylistEntry(playlistTracks[index].path, playlistTracks[target].path)
+  }, [playlistTracks, reorderPlaylistEntry])
   const visiblePlaylists = useMemo(() => playlistFolderFilter === 'all' ? playlists : playlistFolderFilter === 'unfiled' ? playlists.filter(p => p.folderId === null || p.folderId === undefined) : playlists.filter(p => p.folderId === playlistFolderFilter), [playlists, playlistFolderFilter])
   const folderChildren = useMemo(() => {
     const byParent = new Map<number | null, PlaylistFolder[]>()
@@ -839,10 +869,18 @@ export default function App() {
               </div>
             </div>
             <div className="section-heading compact"><div><h2>Tracks</h2><p>Removing a track only removes the playlist entry.</p></div><span className="muted">{playlistTracks.length} items</span></div>
-            {playlistTracks.length ? <div className="track-table">{playlistTracks.map((t,i) => <div className="track-row" key={t.path} onDoubleClick={() => playTrack(t, playlistTracks)}>
-              <div className="track-title-cell"><div className="row-index">{String(i+1).padStart(2,'0')}</div><div className="row-cover">{t.artworkUrl ? <img src={t.artworkUrl} alt=""/> : <Disc3 size={17}/>}</div><div className="track-labels"><b>{t.title}</b><small>{t.artist}</small></div></div>
+            {playlistTracks.length ? <div className="track-table">{playlistTracks.map((t,i) => <div
+              className={`track-row playlist-track-row ${draggedPlaylistTrackPath === t.path ? 'dragging' : ''} ${playlistDropTargetPath === t.path ? 'drop-target' : ''}`}
+              key={t.path}
+              draggable
+              onDragStart={event => { setDraggedPlaylistTrackPath(t.path); event.dataTransfer.setData('text/plain', t.path); event.dataTransfer.effectAllowed = 'move' }}
+              onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; if (draggedPlaylistTrackPath && draggedPlaylistTrackPath !== t.path) setPlaylistDropTargetPath(t.path) }}
+              onDrop={event => { event.preventDefault(); const sourcePath = event.dataTransfer.getData('text/plain') || draggedPlaylistTrackPath; if (sourcePath) void reorderPlaylistEntry(sourcePath, t.path); else { setDraggedPlaylistTrackPath(null); setPlaylistDropTargetPath(null) } }}
+              onDragEnd={() => { setDraggedPlaylistTrackPath(null); setPlaylistDropTargetPath(null) }}
+              onDoubleClick={() => playTrack(t, playlistTracks)}>
+              <div className="track-title-cell"><div className="row-index" title="Drag this row to reorder the playlist">{String(i+1).padStart(2,'0')}</div><div className="row-cover">{t.artworkUrl ? <img src={t.artworkUrl} alt=""/> : <Disc3 size={17}/>}</div><div className="track-labels"><b>{t.title}</b><small>{t.artist}</small></div></div>
               <span className="muted truncate">{t.album}</span><span className="muted">{t.genre || '—'}</span><span className="muted mono">{timeLabel(t.duration)}</span>
-              <div className="row-actions"><button title="Play" onClick={() => playTrack(t, playlistTracks)}><Play size={15}/></button><button title="Remove from playlist" onClick={async () => { if (activePlaylist) { await window.myriff.removePlaylistTrack(activePlaylist.id, t.path); await refreshPlaylists() } }}><X size={16}/></button></div>
+              <div className="row-actions"><button title="Play" aria-label={`Play ${t.title}`} onClick={() => playTrack(t, playlistTracks)}><Play size={15}/></button><button className="icon-button" title="Move track earlier" aria-label={`Move ${t.title} earlier`} disabled={i===0} onClick={event => { event.stopPropagation(); movePlaylistEntry(i,-1) }}><ChevronUp size={14}/></button><button className="icon-button" title="Move track later" aria-label={`Move ${t.title} later`} disabled={i===playlistTracks.length-1} onClick={event => { event.stopPropagation(); movePlaylistEntry(i,1) }}><ChevronDown size={14}/></button><button title="Remove from playlist" aria-label={`Remove ${t.title} from playlist`} onClick={async () => { if (activePlaylist) { await window.myriff.removePlaylistTrack(activePlaylist.id, t.path); await refreshPlaylists() } }}><X size={16}/></button></div>
             </div>)}</div> : <div className="empty-state compact-empty"><ListMusic size={28}/><b>{activePlaylist ? 'This playlist is empty' : 'Choose or create a playlist'}</b><span>{activePlaylist ? 'Add music from your library using the list icon.' : 'Select a playlist on the left, or create one to get started.'}</span><button className="secondary-button" onClick={() => setPage('library')}>Browse library</button></div>}
           </section>
         </div>}
