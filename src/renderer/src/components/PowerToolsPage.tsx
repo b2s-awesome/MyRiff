@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Archive, Bookmark, Check, Clock3, Copy, FileSpreadsheet, Heart, LoaderCircle, Music2, Search, ShieldAlert, Sparkles, Star, Trash2, WandSparkles } from 'lucide-react'
-import type { AppSettings, DuplicateGroup, ListeningHistoryItem, MetadataSuggestion, SmartPlaylist, SmartPlaylistRule, Track, TrackBookmark } from '../../shared/types'
+import { Archive, AudioLines, Bookmark, Check, CheckCircle2, Clock3, Copy, FileSpreadsheet, Heart, ListMusic, LoaderCircle, Music2, Search, ShieldAlert, Sparkles, Star, Trash2, WandSparkles } from 'lucide-react'
+import type { AppSettings, DuplicateGroup, ListeningHistoryItem, MetadataSuggestion, SmartPlaylist, SmartPlaylistRule, Track, TrackBookmark } from '../../../shared/types'
 
 const formatTime = (seconds: number) => `${Math.floor(Math.max(0,seconds)/60)}:${String(Math.floor(Math.max(0,seconds)%60)).padStart(2,'0')}`
 
