@@ -122,6 +122,8 @@ export interface AudioProfile {
   eqBands: number[]
   eqQ?: number
   stereoWidth?: number
+  effectChain?: EffectName[]
+  effectsBypass?: boolean
   tempo: number
   pitch: number
   reverb: number
