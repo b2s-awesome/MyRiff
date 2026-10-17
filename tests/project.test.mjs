@@ -123,6 +123,9 @@ test('CI resolves one npm lockfile and shares it across validation and native pl
   assert.match(workflow, /windows-latest/)
   assert.match(workflow, /macos-latest/)
   assert.match(workflow, /ubuntu-latest/)
+  assert.match(workflow, /npm audit --omit=dev --audit-level=high/)
+  assert.match(workflow, /Smoke-test packaged Linux app under Xvfb/)
+  assert.match(workflow, /Smoke-test packaged Windows app/)
   assert.match(workflow, /cancel-in-progress: true/)
 })
 
