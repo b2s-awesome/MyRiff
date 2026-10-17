@@ -9,7 +9,7 @@
 | Area | Implemented | Notes |
 |---|---|---|
 | Local library | Yes | Bulk tag editor exports multiple tagged copies with optional shared artist/album/year overrides and title templates; originals are not overwritten. Recursive scan for FLAC, MP3, WAV, OGG, M4A, OPUS and several other common formats; title, artist, album, track, genre, year, duration and embedded art; fuzzy search; album/artist/folder/genre grouping; grid/list views. |
-| Playlists | Yes | SQLite-backed create, rename, delete, add and remove. Items reference source paths; deleting a playlist does not delete audio files. |
+| Playlists | Yes | SQLite-backed create, rename, delete, add, remove and reorder with drag-and-drop or move controls. Items reference source paths; deleting a playlist does not delete audio files. |
 | Playback | Yes | Play/pause, seek for local files, volume, next/previous, shuffle, repeat modes, saved position and queue. HTML media playback does not guarantee gapless transitions on all codecs/platforms. |
 | Real-time DSP | Yes, with fallback caveat | 10-band EQ and presets, reverb, distortion, plus SoundTouch-worklet tempo and semitone pitch processing when the worklet loads. The fallback couples pitch and speed. The worklet path has source-level checks but still needs packaged audio-quality validation. |
 | Local radio/discovery | Yes, heuristic | Generates a local listening queue from artist, genre, album, year, ratings and favourites. No profile leaves the device; it is a transparent metadata heuristic, not acoustic AI. |
@@ -17,7 +17,7 @@
 | Downloads | Yes, with external tools | MP3/FLAC/Opus selection, progress events, retry/resume using retained partial files, and file-manager access. Saved playlist sources support opt-in scheduled sync while MyRiff is open. yt-dlp and usually FFmpeg must be installed. Output is written to `Music/MyRiff Downloads`. |
 | Playlist import | Partial | Extractor-supported public playlists are parsed and entries are matched to the local library. Unmatched entries are reported, not automatically downloaded. Spotify/Apple Music often restrict anonymous track-list access; support depends on the currently available public page/extractor. |
 | Audio editor | Yes, with FFmpeg | Waveform preview with drag-to-select trim range, 0.1-second snapping and trim-range undo/redo; export a new file with speed, reverb, distortion and EQ. Source files are not overwritten. Full zoom and persistent edit sessions remain incomplete. |
-| Lyrics | Yes | LRCLIB lookup, LRC/TXT import, synced line highlighting, per-line manual timing, approximate karaoke word highlighting and local onset/energy-assisted auto-timing. Auto-timing is heuristic; review it. Timings are stored locally for local tracks. |
+| Lyrics | Yes | LRCLIB lookup, LRC/TXT import including Enhanced LRC word timestamps, synced line highlighting, per-line manual timing, authored word highlighting when timestamps exist and approximate karaoke highlighting otherwise. Local onset/energy-assisted auto-timing is heuristic; review it. Timings are stored locally for local tracks. |
 | Theme/UI | Yes | Dark/light theme, sampled album-art accent, custom CSS, profile banner, responsive sidebar and compact mini-player window; customisation profile import/export. |
 | OS integration | Partial | Media keys and tray controls; optional sleep inhibition and portable data mode. Discord Rich Presence needs a Discord application ID and working local Discord IPC; it uses the `myriff` large-image asset key rather than uploading local cover art. |
 | Privacy | Yes by design | No app accounts, telemetry or analytics are included. Customisation profiles can be exported/imported independently of full database backups. Online searches/lyrics/streaming naturally contact those external services. |
@@ -150,7 +150,7 @@ Run `npm test` for the repository smoke tests and `npm run lint:source` for requ
 
 ## Data and privacy
 
-Library metadata, artwork-cache references, playlists, settings, playback state, download history and local lyric timings live in `myriff.sqlite` under Electron's `app.getPath('userData')` directory. Album-art cache files are stored beside that database in an `artwork/` directory. The app does not relocate local audio when scanning or managing playlists.
+Library metadata, artwork-cache references, playlists, watched library roots, saved playlist sync sources, download job history, settings, playback state, completed download history and local lyric timings live in `myriff.sqlite` under Electron's `app.getPath('userData')` directory. Album-art cache files are stored beside that database in an `artwork/` directory. The app does not relocate local audio when scanning or managing playlists.
 
 Online functionality sends searches/URLs to yt-dlp's target service, lyric requests to LRCLIB and media requests to the chosen provider. These external calls are necessary for those features and are not app telemetry.
 
@@ -169,4 +169,4 @@ MIT. See [LICENSE](LICENSE).
 
 ### Nested playlist folders
 
-Playlists can be filed in folders and subfolders. Folder operations only change MyRiff's database references; they never move, rename, or delete the original audio files. Deleting a folder removes that folder subtree and returns its playlists to Unfiled. Folder structure is included in MyRiff backups.
+Playlists can be filed in folders and subfolders. Folder operations only change MyRiff's database references; they never move, rename, or delete the original audio files. Deleting a folder removes that folder subtree and returns its playlists to Unfiled. Folder structure, watched library roots, saved playlist-sync sources and download-job history are included in MyRiff backups. Queued or in-progress jobs restore as paused so the UI never implies a dead process is still running.
