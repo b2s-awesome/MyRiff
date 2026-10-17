@@ -296,7 +296,8 @@ test('scheduled and manual playlist sync only mark sources synced after successf
   assert.match(ipc, /scheduledPlaylistSources\.delete\(source\.id\)[\s\S]{0,100}if \(progress\.status === 'finished'\) touchPlaylistSource\(source\.id\)/)
   const manual = ipc.slice(ipc.indexOf("ipcMain.handle('playlist:source-sync'"), ipc.indexOf("ipcMain.handle('stream:search'"))
   assert.match(manual, /if \(p\.status === 'finished'\) touchPlaylistSource\(id\)/)
-  assert.doesNotMatch(manual.slice(manual.lastIndexOf('}, true)'), /touchPlaylistSource/)
+  const callbackTail = manual.slice(manual.indexOf('}, true)'))
+  assert.doesNotMatch(callbackTail, /touchPlaylistSource/)
 })
 
 test('Downloads page restores persisted jobs and can retry interrupted jobs after restart', () => {
