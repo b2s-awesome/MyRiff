@@ -177,7 +177,7 @@ export interface AppSettings {
   showVisualizer: boolean
   visualizerStyle: VisualizerStyle
   visualizerSensitivity: number
-  defaultPage: 'library' | 'playlists' | 'search' | 'downloads' | 'playlist-studio'
+  defaultPage: 'library' | 'playlists' | 'search' | 'downloads' | 'playlist-studio' | 'power-tools' | 'radio' | 'editor' | 'lyrics' | 'sound' | 'settings'
   showTrackNumbers: boolean
   showYear: boolean
   showGenre: boolean
