@@ -278,3 +278,15 @@ test('confirm-destructive-actions preference gates destructive library cleanup a
   assert.ok(page.includes("settings.confirmDestructiveActions && !window.confirm('Remove this track from MyRiff"))
   assert.ok(page.includes("settings.confirmDestructiveActions && !window.confirm('Restore a MyRiff backup"))
 })
+
+test('OS media-session controls expose track metadata, transport, seek actions and position state', () => {
+  const app = read('src/renderer/src/App.tsx')
+  assert.match(app, /navigator\.mediaSession/)
+  assert.match(app, /new MediaMetadata/)
+  assert.match(app, /setActionHandler\('nexttrack'/)
+  assert.match(app, /setActionHandler\('previoustrack'/)
+  assert.match(app, /setActionHandler\('seekbackward'/)
+  assert.match(app, /setActionHandler\('seekforward'/)
+  assert.match(app, /mediaSession\.playbackState =/)
+  assert.match(app, /mediaSession\.setPositionState/)
+})
