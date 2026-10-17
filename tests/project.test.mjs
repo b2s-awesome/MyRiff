@@ -123,6 +123,7 @@ test('CI resolves one npm lockfile and shares it across validation and native pl
   assert.match(workflow, /windows-latest/)
   assert.match(workflow, /macos-latest/)
   assert.match(workflow, /ubuntu-latest/)
+  assert.match(workflow, /cancel-in-progress: true/)
 })
 
 
@@ -156,4 +157,17 @@ test('bulk tag editor exports new copies through the main process and never over
   assert.match(preload, /bulkExportMetadataCopies/)
   assert.match(ui, /Bulk tag editor/)
   assert.match(ui, /Export \{bulkSelected\.size\} tagged copies/)
+})
+
+
+test('remote streaming forwards source MIME and valid byte ranges and cleans up on disconnect', () => {
+  const source = read('src/main/streaming.ts')
+  assert.match(source, /--get-url/)
+  assert.match(source, /requestHeaders\.Range = range/)
+  assert.match(source, /upstream\.headers\.get\('content-type'\)/)
+  assert.match(source, /fallbackStreamMimeType/)
+  assert.match(source, /Readable\.fromWeb\(upstream\.body\)/)
+  assert.match(source, /res\.on\('close'/)
+  assert.match(source, /liveStreamRequests\.clear\(\)/)
+  assert.doesNotMatch(source, /'Content-Type': 'audio\/webm'/)
 })
