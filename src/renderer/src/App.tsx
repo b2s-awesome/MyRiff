@@ -229,7 +229,7 @@ export default function App() {
     const key = `${current.path}|${profile?.id || 'none'}`
     if (lastProfileKeyRef.current === `profile:${key}`) return
     lastProfileKeyRef.current = `profile:${key}`
-    if (profile) saveSettings({ eqBands: profile.eqBands, effectTempo: profile.tempo, effectPitch: profile.pitch, effectReverb: profile.reverb, effectDistortion: profile.distortion, eqPreset: profile.name })
+    if (profile) saveSettings({ eqBands: profile.eqBands, eqQ: profile.eqQ ?? settings.eqQ, stereoWidth: profile.stereoWidth ?? settings.stereoWidth, effectTempo: profile.tempo, effectPitch: profile.pitch, effectReverb: profile.reverb, effectDistortion: profile.distortion, eqPreset: profile.name })
   }, [current?.path, current?.genre, current?.artist, settings?.audioProfiles, settings?.audioOutputDeviceId, audioOutputs, saveSettings])
   const fuzzy = useMemo(() => new Fuse(tracks, { keys: ['title','artist','album','genre','folder','path'], threshold: 0.35, ignoreLocation: true }), [tracks])
   const filteredTracks = useMemo(() => globalSearch.trim() ? fuzzy.search(globalSearch).map(x => x.item) : tracks, [globalSearch, fuzzy, tracks])
