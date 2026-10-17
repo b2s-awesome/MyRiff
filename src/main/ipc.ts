@@ -306,6 +306,8 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     return { folder: outputFolder, successes, failures }
   })
   ipcMain.handle('metadata:search', (_e, trackPath: string) => {
+    const settings = store.getSettings()
+    if (settings.metadataProvider === 'off') throw new Error('Metadata lookup is disabled in Settings.')
     const track = store.getTrack(trackPath)
     if (!track) throw new Error('Track is not in the local library.')
     return searchMusicBrainz(track)
