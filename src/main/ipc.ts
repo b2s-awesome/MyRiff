@@ -152,6 +152,8 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
   ipcMain.handle('settings:get', async () => { const settings = store.getSettings(); await configureWatcher(settings); return settings })
   ipcMain.handle('settings:set', async (_e, patch: Partial<AppSettings>) => {
     const before = store.getSettings()
+    if (patch.eqQ !== undefined && (!Number.isFinite(patch.eqQ) || patch.eqQ < 0.3 || patch.eqQ > 8)) throw new Error('EQ bandwidth must be between 0.3 and 8.')
+    if (patch.stereoWidth !== undefined && (!Number.isFinite(patch.stereoWidth) || patch.stereoWidth < 0 || patch.stereoWidth > 2)) throw new Error('Stereo width must be between 0 and 2.')
     const settings = store.setSettings(patch)
     if (patch.inhibitSleep !== undefined) refreshPowerBlocker(settings, playingNow)
     if (patch.autoWatchFolders !== undefined || patch.musicFolder !== undefined) await configureWatcher(settings)
