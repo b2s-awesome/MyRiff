@@ -1,0 +1,126 @@
+name: Build MyRiff
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-dependencies:
+    name: Resolve one dependency graph
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Generate lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Upload lockfile for every platform job
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-lock
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 14
+
+  validate:
+    name: Validate source
+    needs: resolve-dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: dependency-lock
+          path: .
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Source sanity
+        run: npm run lint:source
+      - name: TypeScript syntax transpilation
+        run: npm run lint:syntax
+      - name: Tests
+        run: npm test
+      - name: TypeScript typecheck
+        run: npm run typecheck
+      - name: Renderer and main-process build
+        run: npm run build
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: [resolve-dependencies, validate]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: Windows
+            script: dist:win
+            artifact: myriff-windows
+          - os: macos-latest
+            platform: macOS
+            script: dist:mac
+            artifact: myriff-macos
+          - os: ubuntu-latest
+            platform: Linux
+            script: dist:linux
+            artifact: myriff-linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: dependency-lock
+          path: .
+      - name: Install Linux Electron libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 libgbm1 libasound2t64 libx11-xcb1 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgtk-3-0 libdrm2
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Build application and installer
+        run: npm run ${{ matrix.script }}
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish tagged release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [resolve-dependencies, validate, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: myriff-*
+          path: release-assets
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: dependency-lock
+          path: release-assets
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release-assets/*

@@ -1,0 +1,96 @@
+{
+  "name": "myriff",
+  "version": "0.2.0",
+  "private": true,
+  "description": "A privacy-first, highly customisable desktop music player, local library manager and playlist studio.",
+  "license": "MIT",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win nsis zip",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb tar.gz",
+    "rebuild:native": "electron-builder install-app-deps",
+    "postinstall": "electron-builder install-app-deps",
+    "test": "node --test tests/*.test.mjs",
+    "lint:source": "node scripts/source-sanity.mjs",
+    "lint:syntax": "node scripts/syntax-check.mjs",
+    "verify": "npm run lint:source && npm run lint:syntax && npm test && npm run typecheck && npm run build"
+  },
+  "dependencies": {
+    "better-sqlite3": "11.10.0",
+    "discord-rpc": "4.0.1",
+    "fuse.js": "7.1.0",
+    "lucide-react": "0.468.0",
+    "music-metadata": "10.7.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "chokidar": "4.0.3",
+    "@soundtouchjs/audio-worklet": "2.1.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.12",
+    "@types/node": "22.13.4",
+    "@types/react": "19.0.8",
+    "@types/react-dom": "19.0.3",
+    "@vitejs/plugin-react": "4.3.4",
+    "electron": "36.0.0",
+    "electron-builder": "26.0.12",
+    "electron-vite": "3.0.0",
+    "typescript": "5.7.3",
+    "vite": "6.1.0"
+  },
+  "build": {
+    "appId": "app.myriff.desktop",
+    "productName": "MyRiff",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "out/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**"
+    ],
+    "npmRebuild": true,
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.music",
+      "icon": "assets/icon.icns"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "tar.gz"
+      ],
+      "category": "Audio;AudioVideo",
+      "icon": "assets/icon.png"
+    }
+  }
+}

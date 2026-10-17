@@ -1,0 +1,83 @@
+# MyRiff feature completion ledger
+
+This document tracks the complete feature scope requested for the private MyRiff client. “Implemented” means present in this source tree; “Partial” means the user interface or initial integration exists but does not yet meet the full target; “Planned” means it still needs implementation and validation. Never treat a partial item as production-complete.
+
+## Core product and local library
+
+- [x] Electron + React + TypeScript main/renderer split, narrow preload IPC bridge, SQLite persistence.
+- [x] Recursive local library scan, common audio formats, metadata and embedded artwork.
+- [x] Grid/list views, fuzzy search, folder/artist/album/genre grouping.
+- [x] Playlists reference paths and do not move originals; create/rename/delete/add/remove.
+- [x] Smart playlists with multi-rule AND/OR conditions.
+- [x] Watch folders, ratings, favourites, listening history, bookmarks, missing-file cleanup.
+- [x] Duplicate scan by file hash and metadata; CSV inventory export.
+- [x] Metadata suggestions from MusicBrainz and tagged-copy export rather than in-place edits.
+- [ ] One-click undo for library metadata operations. Bulk tag editor is implemented as non-destructive multi-track tagged-copy export; it does not overwrite original files.
+- [ ] Persistent playlist folders/nesting and full drag-and-drop playlist editor.
+
+## Playback and Sound Lab
+
+- [x] Play/pause, previous/next, seek, volume, shuffle, repeat, queue reorder/clear, session restore.
+- [x] Web Audio EQ, presets, reverb, distortion, visualiser, output-device selection where supported.
+- [x] Audio profiles that can match artist, genre or output device.
+- [x] ReplayGain/loudness analysis and per-track gain metadata.
+- [x] Independent pitch shifting and tempo-preserving time stretch are wired through the SoundTouch worklet; the fallback intentionally couples pitch and speed. Needs packaged runtime/audio quality validation before being called release-ready.
+- [ ] True gapless playback across codec/platform combinations.
+- [ ] True overlapping crossfade between two simultaneously decoded tracks; current transition setting is a single-track fade approximation.
+- [ ] A/B processed-versus-original listening comparison and ordered effect-chain graph UI. The existing effects-bypass toggle is a manual comparison, not a synchronized A/B player.
+- [ ] Parametric EQ, stereo width and per-headphone/device profile wizard.
+- [ ] Native exclusive/bit-perfect output and explicit sample-rate/bit-depth controls.
+
+## Playlist Studio and downloads
+
+- [x] Playlist URL preview for supported public YouTube, YouTube Music and SoundCloud URLs.
+- [x] Whole-playlist download through yt-dlp, MP3/FLAC/Opus output choices, progress and retries.
+- [x] Saved source list and archive-backed “sync new tracks” workflow.
+- [x] Local playlist import/export (M3U, CSV, TXT), TuneMyMusic external transfer route.
+- [x] Existing-library matching report and unmatched-entry reporting.
+- [x] Opt-in scheduler for periodic playlist sync with a configurable interval; runs while the app is open. Per-source rules and richer notifications remain partial.
+- [ ] Truly bounded multi-job queue scheduling; pause stops yt-dlp while retaining partial files and resume starts a new continuation job. Job state is persisted and interrupted jobs are marked paused on restart, but automatic resume and end-to-end recovery validation remain.
+- [ ] Automatic metadata/art enrichment after download with confidence review.
+- [ ] Spotify/Apple Music playlist resolution is conditional on public access/exported playlist metadata; no unsupported private API or DRM bypass.
+
+## Audio editor and lyrics
+
+- [x] FFmpeg export to a new file, trim start/end, section export, speed, reverb, distortion and gain EQ.
+- [x] Waveform preview, section timestamps, LRCLIB lookup, LRC import, synced line highlight, manual timing and heuristic auto-timing.
+- [x] Draggable waveform trim selection, 0.1-second snapping and undo/redo for waveform range changes.
+- [ ] Waveform zoom, transient-aware snapping and persisted non-destructive edit sessions.
+- [ ] True word-level lyric timing and external lyric-provider plug-in interface. An approximate karaoke preview now distributes word highlights across the interval between timed lyric lines; it is a visual estimate, not authored per-word timestamps.
+- [ ] Independent effect rendering per effect-chain order in offline exports.
+
+## Discovery and integrations
+
+- [x] Remote search/playback adapters through yt-dlp for supported sources.
+- [x] Local Radio page that generates a transparent metadata-based similarity queue.
+- [x] Discord Rich Presence integration hook, global media shortcuts, tray controls, optional sleep inhibition.
+- [ ] Audio-fingerprint similarity and “more like this” recommendations beyond metadata heuristics.
+- [ ] Configurable visualiser shader packs and saved visualiser layouts.
+- [ ] Full system media-session integration and volume hotkeys validated across Windows/macOS/Linux.
+- [ ] Verified Discord artwork handling for per-track art; current RPC uses a configured app asset key.
+
+## Personalisation, privacy and release engineering
+
+- [x] Dark/light/system theme, dynamic/custom accent, profile banner, custom CSS, compact mini-player.
+- [x] UI density, UI scale, sidebar width, grid columns, corner radius, animations, artwork background, visualiser controls.
+- [x] Download settings, tool path overrides, streaming priority, keyboard shortcut settings, audio profiles, privacy/history controls.
+- [x] Local SQLite backups/restore, diagnostic report, source-level sanity check and smoke tests.
+- [x] Portable data mode with a startup marker, database checkpoint, data-folder migration and restart-on-switch (needs packaged-runtime validation).
+- [x] App-shortcut capture UI with collision detection and clearable bindings. Separate global-vs-app scope labels and configurable OS-global shortcut registration remain.
+- [x] Customisation profile import/export independent of the full database backup; imported values are filtered and range-validated.
+- [ ] In-app update channel and safe rollback.
+- [ ] Full dependency-aware typecheck, automated UI tests, audio playback integration tests, and verified Windows/macOS/Linux packaged builds. The local environment cannot resolve npm registry DNS, so these release gates are still blocked here.
+
+## Release gates
+
+1. **0.2.x foundation:** setup/recovery, reliable install and typecheck, library/playlist stability, local radio, Playlist Studio and settings persistence.
+2. **0.3.x playback:** SoundTouch integration for independent pitch/tempo, true crossfade/gapless strategy, A/B DSP and output validation.
+3. **0.4.x editor/discovery:** full waveform editing, smarter matching, provider adapters and metadata enrichment.
+4. **1.0:** cross-platform packaging, upgrade/rollback, accessibility, security review and regression testing.
+
+## Download and provider policy
+
+MyRiff should only download audio that the user is authorised to save and that the relevant source permits. It must not bypass DRM, account gates, paywalls, or service restrictions. Playlist transfers such as TuneMyMusic move track-list metadata; they do not grant rights to download audio. External provider requests are not app telemetry, but they do leave the device when those features are used.
