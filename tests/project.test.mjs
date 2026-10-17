@@ -320,6 +320,37 @@ test('Enhanced LRC lyrics use authored word timestamps and preserve a line-only 
   assert.match(app, /function renderTimedKaraokeWords/)
 })
 
+
+test('playlist editor reorders entries persistently through guarded IPC with drag and accessible controls', () => {
+  const db = read('src/main/db.ts')
+  const ipc = read('src/main/ipc.ts')
+  const preload = read('src/preload/index.ts')
+  const app = read('src/renderer/src/App.tsx')
+  const styles = read('src/renderer/src/styles.css')
+  assert.match(db, /export function reorderPlaylistTracks/)
+  assert.match(db, /currentPaths\.length !== orderedPaths\.length/)
+  assert.match(db, /new Set\(orderedPaths\)\.size !== orderedPaths\.length/)
+  assert.match(ipc, /ipcMain\.handle\('playlist:reorder'/)
+  assert.match(preload, /reorderPlaylistTracks: \(id: number, orderedPaths: string\[\]\)/)
+  assert.match(app, /draggable/)
+  assert.match(app, /onDrop=\{/)
+  assert.match(app, /Move track earlier/)
+  assert.match(app, /Move track later/)
+  assert.match(styles, /playlist-track-row\.drop-target/)
+})
+
+test('full backup preserves library roots, saved playlist sources and download history/jobs', () => {
+  const db = read('src/main/db.ts')
+  assert.match(db, /libraryRoots: db\.prepare\('SELECT \* FROM library_roots'\)/)
+  assert.match(db, /playlistSources: db\.prepare\('SELECT \* FROM playlist_sources'\)/)
+  assert.match(db, /downloadJobs: db\.prepare\('SELECT \* FROM download_jobs'\)/)
+  assert.match(db, /INSERT OR IGNORE INTO library_roots/)
+  assert.match(db, /INSERT OR IGNORE INTO playlist_sources/)
+  assert.match(db, /INSERT OR IGNORE INTO download_jobs/)
+  assert.match(db, /const status = interrupted \? 'paused' : row\.status/)
+  assert.match(db, /Restored from backup\. Retry to continue partial files/)
+})
+
 test('Sound Lab supports adjustable EQ bandwidth and stereo width in live and offline audio', () => {
   const types = read('src/shared/types.ts')
   const defaults = read('src/main/db.ts')
