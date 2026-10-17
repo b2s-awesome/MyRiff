@@ -28,7 +28,7 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
       distortionRef.current?.disconnect(); dryRef.current?.disconnect(); wetRef.current?.disconnect()
       convolverRef.current?.disconnect(); reverbMixRef.current?.disconnect(); analyser.disconnect()
       let current: AudioNode = input
-      const uniqueChain: EffectName[] = (settings?.effectChain?.length ? settings.effectChain : ['eq', 'distortion', 'reverb']).filter((name, i, all) => all.indexOf(name) === i)
+      const uniqueChain: EffectName[] = (settings?.effectChain?.length ? settings.effectChain : (['eq', 'distortion', 'reverb'] as EffectName[])).filter((name, i, all) => all.indexOf(name) === i)
       for (const effect of uniqueChain) {
         if (effect === 'eq') {
           const filters = filtersRef.current
