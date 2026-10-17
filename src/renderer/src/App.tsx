@@ -445,12 +445,12 @@ export default function App() {
     if (!current) { notify('Start playing a track to find lyrics.'); return }
     setLyricsBusy(true); setLyricStatus('Searching LRCLIB…')
     try {
-      if (settings.lyricsProvider === 'local-first' && !current.streamUrl) {
+      if (settings?.lyricsProvider === 'local-first' && !current.streamUrl) {
         const saved = await window.myriff.getSavedLyrics(current.path) as LyricLine[] | null
         if (saved?.length) { const result = { synced: saved.some(l=>l.time!==null), lines: saved, provider: 'Saved local lyrics' }; setLyrics(result); setLyricLines(saved); setLyricStatus('Loaded saved local lyrics'); setLyricsBusy(false); return }
       }
       const result = await window.myriff.searchLyrics(current.title, current.artist, current.album, current.duration)
-      if (result) { setLyrics(result); setLyricLines(result.lines); setLyricStatus(result.synced ? 'Synced lyrics found' : 'Plain lyrics found — timing can be added manually'); if (settings.saveLyricsLocally && !current.streamUrl) await window.myriff.saveLyrics(current.path, result.lines) }
+      if (result) { setLyrics(result); setLyricLines(result.lines); setLyricStatus(result.synced ? 'Synced lyrics found' : 'Plain lyrics found — timing can be added manually'); if (settings?.saveLyricsLocally && !current.streamUrl) await window.myriff.saveLyrics(current.path, result.lines) }
       else { setLyrics(null); setLyricLines([]); setLyricStatus('No lyrics found for this track.') }
     } catch (e) { setLyricStatus(e instanceof Error ? e.message : 'Lyrics provider could not be reached.') }
     finally { setLyricsBusy(false) }
@@ -460,7 +460,7 @@ export default function App() {
       const result = await window.myriff.importLrc()
       if (!result) return
       setLyrics({ synced: result.synced, lines: result.lines, provider: 'Local LRC', source: result.path }); setLyricLines(result.lines); setLyricStatus(`Imported ${result.lines.length} lines from ${result.path}`)
-      if (settings.saveLyricsLocally && current && !current.streamUrl) await window.myriff.saveLyrics(current.path, result.lines)
+      if (settings?.saveLyricsLocally && current && !current.streamUrl) await window.myriff.saveLyrics(current.path, result.lines)
     } catch (e) { notify(e instanceof Error ? e.message : 'Could not import lyrics.') }
   }
   const saveLyricTiming = async (lines: LyricLine[]) => { setLyricLines(lines); if (current && !current.streamUrl) await window.myriff.saveLyrics(current.path, lines) }
