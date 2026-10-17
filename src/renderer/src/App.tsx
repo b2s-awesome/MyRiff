@@ -636,7 +636,7 @@ export default function App() {
     if (!output) return
     setEditProgress(0)
     try {
-      await window.myriff.exportAudio({ inputPath: input.path, outputPath: output, start: editStart, end: editEnd > editStart ? editEnd : undefined, speed: editSpeed, reverb: editReverb, distortion: editDistortion, eqBands: editEqBands, effectChain: settings?.effectChain })
+      await window.myriff.exportAudio({ inputPath: input.path, outputPath: output, start: editStart, end: editEnd > editStart ? editEnd : undefined, speed: editSpeed, reverb: editReverb, distortion: editDistortion, eqBands: editEqBands, eqQ: settings?.eqQ, stereoWidth: settings?.stereoWidth, effectChain: settings?.effectChain })
       setEditProgress(null); await refreshTracks(); notify('Edited audio exported as a new file. Your source track was left untouched.')
     } catch (e) { setEditProgress(null); notify(e instanceof Error ? e.message : 'Audio export failed. Check FFmpeg in Settings.') }
   }
