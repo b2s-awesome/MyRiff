@@ -81,3 +81,9 @@ This document tracks the complete feature scope requested for the private MyRiff
 ## Download and provider policy
 
 MyRiff should only download audio that the user is authorised to save and that the relevant source permits. It must not bypass DRM, account gates, paywalls, or service restrictions. Playlist transfers such as TuneMyMusic move track-list metadata; they do not grant rights to download audio. External provider requests are not app telemetry, but they do leave the device when those features are used.
+
+
+## Latest completion pass
+
+- [x] Nested playlist folders with subfolders, rename/delete, unfiled recovery and playlist reassignment.
+- [x] Folder-aware backup/export restoration with backwards compatibility for version-1 backups.

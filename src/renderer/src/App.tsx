@@ -8,7 +8,7 @@ import {
   Trash2, Upload, X, Pencil, RefreshCw, Heart, Disc3, Music, ArrowUpRight, ExternalLink,
   WandSparkles, History, Star, AudioWaveform, Keyboard, Bookmark, Archive, CheckCircle2
 } from 'lucide-react'
-import type { AppSettings, DownloadProgress, LyricsResult, LyricLine, Playlist, SearchResult, StreamSource, Track, PlaybackState } from '../../shared/types'
+import type { AppSettings, DownloadProgress, LyricsResult, LyricLine, Playlist, PlaylistFolder, SearchResult, StreamSource, Track, PlaybackState } from '../../shared/types'
 import TrackGrid from './components/TrackGrid'
 import PlayerBar from './components/PlayerBar'
 import EffectsPanel from './components/EffectsPanel'
@@ -42,6 +42,8 @@ export default function App() {
   const { ensureGraph, analyser, crossfadeToNext, handoffToMain, resetCrossfade } = audioEngine
   const [tracks, setTracks] = useState<Track[]>([])
   const [playlists, setPlaylists] = useState<Playlist[]>([])
+  const [playlistFolders, setPlaylistFolders] = useState<PlaylistFolder[]>([])
+  const [playlistFolderFilter, setPlaylistFolderFilter] = useState<'all' | 'unfiled' | number>('all')
   const [downloads, setDownloads] = useState<DownloadRecord[]>([])
   const [page, setPage] = useState<Page>('library')
   const [globalSearch, setGlobalSearch] = useState('')
@@ -115,7 +117,38 @@ export default function App() {
     }
   }, [notify])
 
-  const refreshPlaylists = useCallback(async () => { setPlaylists(await window.myriff.listPlaylists()) }, [])
+  const refreshPlaylists = useCallback(async () => {
+    const [latestPlaylists, latestFolders] = await Promise.all([window.myriff.listPlaylists(), window.myriff.listPlaylistFolders()])
+    setPlaylists(latestPlaylists); setPlaylistFolders(latestFolders)
+  }, [])
+  const promptCreatePlaylistFolder = useCallback(async (parentId: number | null = null) => {
+    const name = prompt(parentId === null ? 'Name your playlist folder' : 'Name your subfolder')
+    if (!name?.trim()) return
+    try {
+      const folder = await window.myriff.createPlaylistFolder(name, parentId)
+      await refreshPlaylists(); setPlaylistFolderFilter(folder.id); setPlaylistId(null)
+      notify(`Created folder “${folder.name}”.`)
+    } catch (error) { notify(error instanceof Error ? error.message : 'Could not create folder.') }
+  }, [refreshPlaylists, notify])
+  const promptRenamePlaylistFolder = useCallback(async (folder: PlaylistFolder) => {
+    const name = prompt('Rename folder', folder.name)
+    if (!name?.trim()) return
+    try { await window.myriff.renamePlaylistFolder(folder.id, name); await refreshPlaylists(); notify('Folder renamed.') }
+    catch (error) { notify(error instanceof Error ? error.message : 'Could not rename folder.') }
+  }, [refreshPlaylists, notify])
+  const promptDeletePlaylistFolder = useCallback(async (folder: PlaylistFolder) => {
+    if (!confirm(`Delete “${folder.name}” and its subfolders? Playlists inside will be preserved in Unfiled. Audio files will not be deleted.`)) return
+    try { await window.myriff.deletePlaylistFolder(folder.id); await refreshPlaylists(); setPlaylistFolderFilter('all'); notify('Folder deleted; playlists were preserved in Unfiled.') }
+    catch (error) { notify(error instanceof Error ? error.message : 'Could not delete folder.') }
+  }, [refreshPlaylists, notify])
+  const movePlaylistToFolder = useCallback(async (playlistIdToMove: number, folderId: number | null) => {
+    try {
+      await window.myriff.movePlaylistToFolder(playlistIdToMove, folderId)
+      await refreshPlaylists()
+      setPlaylistFolderFilter(folderId === null ? 'unfiled' : folderId)
+      notify(folderId === null ? 'Playlist moved to Unfiled.' : 'Playlist moved into folder.')
+    } catch (error) { notify(error instanceof Error ? error.message : 'Could not move playlist.') }
+  }, [refreshPlaylists, notify])
   const refreshDownloads = useCallback(async () => { setDownloads(await window.myriff.listDownloads()) }, [])
   const refreshTracks = useCallback(async () => { setTracks(await window.myriff.getTracks()) }, [])
   const toggleFavorite = useCallback(async (track: Track) => { try { await window.myriff.setTrackFavorite(track.path, !track.favorite); await refreshTracks() } catch (e) { notify(e instanceof Error ? e.message : 'Could not update favourite.') } }, [refreshTracks, notify])
@@ -139,8 +172,8 @@ export default function App() {
     booted.current = true
     ;(async () => {
       try {
-        const [s, lib, pls, saved, dl] = await Promise.all([window.myriff.getSettings(), window.myriff.getTracks(), window.myriff.listPlaylists(), window.myriff.getPlayback(), window.myriff.listDownloads()])
-        setSettings(s); setLiveAccent(s.accent); setTracks(lib); setPlaylists(pls); setDownloads(dl); setVolume(saved.volume); setShuffle(saved.shuffle); setRepeat(saved.repeat); setPage(s.defaultPage || 'library')
+        const [s, lib, pls, folders, saved, dl] = await Promise.all([window.myriff.getSettings(), window.myriff.getTracks(), window.myriff.listPlaylists(), window.myriff.listPlaylistFolders(), window.myriff.getPlayback(), window.myriff.listDownloads()])
+        setSettings(s); setLiveAccent(s.accent); setTracks(lib); setPlaylists(pls); setPlaylistFolders(folders); setDownloads(dl); setVolume(saved.volume); setShuffle(saved.shuffle); setRepeat(saved.repeat); setPage(s.defaultPage || 'library')
         const all = lib
         if (saved.path) {
           const previous = all.find(t => t.path === saved.path)
@@ -201,6 +234,34 @@ export default function App() {
   const fuzzy = useMemo(() => new Fuse(tracks, { keys: ['title','artist','album','genre','folder','path'], threshold: 0.35, ignoreLocation: true }), [tracks])
   const filteredTracks = useMemo(() => globalSearch.trim() ? fuzzy.search(globalSearch).map(x => x.item) : tracks, [globalSearch, fuzzy, tracks])
   const activePlaylist = playlists.find(p => p.id === playlistId) || null
+  const visiblePlaylists = useMemo(() => playlistFolderFilter === 'all' ? playlists : playlistFolderFilter === 'unfiled' ? playlists.filter(p => p.folderId === null || p.folderId === undefined) : playlists.filter(p => p.folderId === playlistFolderFilter), [playlists, playlistFolderFilter])
+  const folderChildren = useMemo(() => {
+    const byParent = new Map<number | null, PlaylistFolder[]>()
+    for (const folder of playlistFolders) { const siblings = byParent.get(folder.parentId) || []; siblings.push(folder); byParent.set(folder.parentId, siblings) }
+    return byParent
+  }, [playlistFolders])
+  const selectPlaylistFolder = useCallback((filter: 'all' | 'unfiled' | number) => {
+    setPlaylistFolderFilter(filter)
+    const list = filter === 'all' ? playlists : filter === 'unfiled' ? playlists.filter(p => p.folderId === null || p.folderId === undefined) : playlists.filter(p => p.folderId === filter)
+    if (!list.some(p => p.id === playlistId)) setPlaylistId(list[0]?.id ?? null)
+  }, [playlists, playlistId])
+  const playlistFolderPath = (folderId: number): string => {
+    const parts: string[] = []; const seen = new Set<number>()
+    let folder = playlistFolders.find(item => item.id === folderId)
+    while (folder && !seen.has(folder.id)) { seen.add(folder.id); parts.unshift(folder.name); folder = folder.parentId === null ? undefined : playlistFolders.find(item => item.id === folder!.parentId) }
+    return parts.join(' / ')
+  }
+  const renderPlaylistFolder = (folder: PlaylistFolder, depth = 0): ReactNode => <div className="playlist-folder-node" key={folder.id}>
+    <div className={`playlist-folder-row ${playlistFolderFilter === folder.id ? 'active' : ''}`} style={{ paddingLeft: `${8 + depth * 13}px` }}>
+      <button type="button" className="playlist-folder-select" onClick={() => selectPlaylistFolder(folder.id)} title={`Show playlists in ${playlistFolderPath(folder.id)}`}><FolderOpen size={14}/><span>{folder.name}</span><small>{folder.playlistCount}</small></button>
+      <div className="playlist-folder-actions">
+        <button className="icon-button" title={`Create subfolder in ${folder.name}`} aria-label={`Create subfolder in ${folder.name}`} onClick={() => void promptCreatePlaylistFolder(folder.id)}><Plus size={12}/></button>
+        <button className="icon-button" title={`Rename ${folder.name}`} aria-label={`Rename ${folder.name}`} onClick={() => void promptRenamePlaylistFolder(folder)}><Pencil size={12}/></button>
+        <button className="icon-button danger" title={`Delete ${folder.name}`} aria-label={`Delete ${folder.name}`} onClick={() => void promptDeletePlaylistFolder(folder)}><Trash2 size={12}/></button>
+      </div>
+    </div>
+    {(folderChildren.get(folder.id) || []).map(child => renderPlaylistFolder(child, depth + 1))}
+  </div>
   useEffect(() => { if (playlistId !== null) window.myriff.getPlaylistTracks(playlistId).then(setPlaylistTracks).catch(() => setPlaylistTracks([])); else setPlaylistTracks([]) }, [playlistId, playlists])
   useEffect(() => {
     let cancelled=false; setLyrics(null); setLyricLines([]); setLyricStatus('')
@@ -670,7 +731,61 @@ export default function App() {
           {!tracks.length ? <div className="welcome-empty"><div className="empty-orbit"><Disc3 size={42}/></div><h3>Your library starts here</h3><p>Pick a music folder and MyRiff will read your tags and embedded album art. Your original files will not be moved or edited.</p><button className="primary-button" onClick={() => scanFolder()}><FolderOpen size={16}/> Choose music folder</button></div> : groupedTracks.map(([group, items]) => <section className="track-group" key={group}><div className="group-title"><h3>{group}</h3><span>{items.length} {items.length === 1 ? 'track' : 'tracks'}</span><button onClick={() => playTrack(items[0], items)} title="Play group"><Play size={14} fill="currentColor"/> Play all</button></div><TrackGrid tracks={items} view={settings.viewMode} onPlay={t => playTrack(t, items)} onQueue={queueTrack} onPlaylist={addTrackToPlaylist} onPlayNext={playNextTrack} onFavorite={toggleFavorite} onRate={cycleRating} showYear={settings.showYear} showGenre={settings.showGenre} showTrackNumbers={settings.showTrackNumbers} selectedPath={current?.path}/></section>)}
         </>}
 
-        {page === 'playlists' && <div className="two-column-page playlist-page"><section className="playlist-rail"><div className="page-section-heading"><div><h2>Your playlists</h2><p>A soundtrack for every mood.</p></div><button className="round-action" onClick={async () => { const name = prompt('Name your playlist'); if (name?.trim()) { try { const p = await window.myriff.createPlaylist(name); await refreshPlaylists(); setPlaylistId(p.id); notify('Playlist created.') } catch (e) { notify(e instanceof Error ? e.message : 'Could not create playlist') } } }}><Plus size={18}/></button></div>{playlists.map(p => <button key={p.id} className={`playlist-item ${playlistId === p.id ? 'active' : ''}`} onClick={() => setPlaylistId(p.id)}><div className="playlist-art"><ListMusic size={19}/></div><div className="playlist-label"><b>{p.name}</b><span>{p.trackCount} tracks</span></div><ChevronDown className="playlist-chevron" size={15}/></button>)}{!playlists.length && <div className="small-empty">No playlists yet. Create one to get started.</div>}</section><section className="playlist-details"><div className="playlist-detail-hero"><div className="playlist-large-art"><ListMusic size={36}/></div><div><span className="eyebrow">PLAYLIST</span><h2>{activePlaylist?.name || 'Choose a playlist'}</h2><p>{playlistTracks.length} tracks · stored locally</p><div className="inline-actions"><button className="primary-button" disabled={!playlistTracks.length} onClick={() => playTrack(playlistTracks[0], playlistTracks)}><Play size={15} fill="currentColor"/> Play playlist</button>{activePlaylist && <button className="ghost-button" onClick={async () => { const n = prompt('Rename playlist', activePlaylist.name); if (n?.trim()) { await window.myriff.renamePlaylist(activePlaylist.id, n); await refreshPlaylists() } }}><Pencil size={15}/> Rename</button>} {activePlaylist && <button className="ghost-button danger-text" onClick={async () => { if (confirm(`Delete “${activePlaylist.name}”? Track files will not be deleted.`)) { await window.myriff.deletePlaylist(activePlaylist.id); const latest = await window.myriff.listPlaylists(); setPlaylists(latest); setPlaylistId(latest[0]?.id ?? null) } }}><Trash2 size={15}/> Delete</button>}</div></div></div><div className="section-heading compact"><div><h2>Tracks</h2><p>Removing a track only removes the playlist entry.</p></div><span className="muted">{playlistTracks.length} items</span></div>{playlistTracks.length ? <div className="track-table">{playlistTracks.map((t,i) => <div className="track-row" key={t.path} onDoubleClick={() => playTrack(t, playlistTracks)}><div className="track-title-cell"><div className="row-index">{String(i+1).padStart(2,'0')}</div><div className="row-cover">{t.artworkUrl ? <img src={t.artworkUrl}/> : <Disc3 size={17}/>}</div><div className="track-labels"><b>{t.title}</b><small>{t.artist}</small></div></div><span className="muted truncate">{t.album}</span><span className="muted">{t.genre || '—'}</span><span className="muted mono">{timeLabel(t.duration)}</span><div className="row-actions"><button title="Play" onClick={() => playTrack(t, playlistTracks)}><Play size={15}/></button><button title="Remove from playlist" onClick={async () => { await window.myriff.removePlaylistTrack(activePlaylist!.id, t.path); await refreshPlaylists() }}><X size={16}/></button></div></div>)}</div> : <div className="empty-state compact-empty"><ListMusic size={28}/><b>This playlist is empty</b><span>Add music from your library using the list icon.</span><button className="secondary-button" onClick={() => setPage('library')}>Browse library</button></div>}</section></div>}
+        {page === 'playlists' && <div className="two-column-page playlist-page">
+          <section className="playlist-rail">
+            <div className="page-section-heading">
+              <div><h2>Your playlists</h2><p>Organise the collection into nested folders.</p></div>
+              <div className="playlist-rail-actions">
+                <button className="round-action" title="Create playlist folder" aria-label="Create playlist folder" onClick={() => void promptCreatePlaylistFolder(null)}><FolderOpen size={16}/></button>
+                <button className="round-action" title="Create playlist" aria-label="Create playlist" onClick={async () => {
+                  const name = prompt('Name your playlist')
+                  if (!name?.trim()) return
+                  try {
+                    const created = await window.myriff.createPlaylist(name)
+                    if (typeof playlistFolderFilter === 'number') await window.myriff.movePlaylistToFolder(created.id, playlistFolderFilter)
+                    await refreshPlaylists(); setPlaylistId(created.id); notify('Playlist created.')
+                  } catch (error) { notify(error instanceof Error ? error.message : 'Could not create playlist') }
+                }}><Plus size={18}/></button>
+              </div>
+            </div>
+            <div className="playlist-folder-filters">
+              <button type="button" className={playlistFolderFilter === 'all' ? 'active' : ''} onClick={() => selectPlaylistFolder('all')}>All playlists <small>{playlists.length}</small></button>
+              <button type="button" className={playlistFolderFilter === 'unfiled' ? 'active' : ''} onClick={() => selectPlaylistFolder('unfiled')}>Unfiled <small>{playlists.filter(p => p.folderId === null || p.folderId === undefined).length}</small></button>
+            </div>
+            <div className="playlist-folder-tree">
+              {playlistFolders.filter(folder => folder.parentId === null).map(folder => renderPlaylistFolder(folder))}
+              {!playlistFolders.length && <p className="playlist-folder-empty">No folders yet. Use the folder button to create one, or press + on a folder to nest another.</p>}
+            </div>
+            <div className="playlist-list-heading"><span>{playlistFolderFilter === 'all' ? 'All playlists' : playlistFolderFilter === 'unfiled' ? 'Unfiled playlists' : `In ${playlistFolders.find(folder => folder.id === playlistFolderFilter)?.name || 'folder'}`}</span><small>{visiblePlaylists.length}</small></div>
+            {visiblePlaylists.map(p => <button key={p.id} className={`playlist-item ${playlistId === p.id ? 'active' : ''}`} onClick={() => setPlaylistId(p.id)}>
+              <div className="playlist-art"><ListMusic size={19}/></div>
+              <div className="playlist-label"><b>{p.name}</b><span>{p.trackCount} tracks</span></div>
+              <ChevronDown className="playlist-chevron" size={15}/>
+            </button>)}
+            {!visiblePlaylists.length && <div className="small-empty">{playlistFolderFilter === 'all' ? 'No playlists yet. Create one to get started.' : playlistFolderFilter === 'unfiled' ? 'All playlists are filed in folders.' : 'This folder has no direct playlists. Create a playlist here or choose one of its subfolders.'}</div>}
+          </section>
+          <section className="playlist-details">
+            <div className="playlist-detail-hero">
+              <div className="playlist-large-art"><ListMusic size={36}/></div>
+              <div>
+                <span className="eyebrow">PLAYLIST</span><h2>{activePlaylist?.name || 'Choose a playlist'}</h2>
+                <p>{playlistTracks.length} tracks · stored locally</p>
+                <div className="inline-actions">
+                  <button className="primary-button" disabled={!playlistTracks.length} onClick={() => playTrack(playlistTracks[0], playlistTracks)}><Play size={15} fill="currentColor"/> Play playlist</button>
+                  {activePlaylist && <label className="playlist-folder-select-field"><span>Folder</span><select aria-label="Move playlist to folder" value={activePlaylist.folderId ?? ''} onChange={event => void movePlaylistToFolder(activePlaylist.id, event.currentTarget.value ? Number(event.currentTarget.value) : null)}><option value="">Unfiled</option>{playlistFolders.map(folder => <option key={folder.id} value={folder.id}>{playlistFolderPath(folder.id)}</option>)}</select></label>}
+                  {activePlaylist && <button className="ghost-button" onClick={async () => { const name = prompt('Rename playlist', activePlaylist.name); if (name?.trim()) { try { await window.myriff.renamePlaylist(activePlaylist.id, name); await refreshPlaylists() } catch (error) { notify(error instanceof Error ? error.message : 'Could not rename playlist') } } }}><Pencil size={15}/> Rename</button>}
+                  {activePlaylist && <button className="ghost-button danger-text" onClick={async () => { if (confirm(`Delete “${activePlaylist.name}”? Track files will not be deleted.`)) { await window.myriff.deletePlaylist(activePlaylist.id); const latest = await window.myriff.listPlaylists(); await refreshPlaylists(); setPlaylistId(latest[0]?.id ?? null) } }}><Trash2 size={15}/> Delete</button>}
+                </div>
+              </div>
+            </div>
+            <div className="section-heading compact"><div><h2>Tracks</h2><p>Removing a track only removes the playlist entry.</p></div><span className="muted">{playlistTracks.length} items</span></div>
+            {playlistTracks.length ? <div className="track-table">{playlistTracks.map((t,i) => <div className="track-row" key={t.path} onDoubleClick={() => playTrack(t, playlistTracks)}>
+              <div className="track-title-cell"><div className="row-index">{String(i+1).padStart(2,'0')}</div><div className="row-cover">{t.artworkUrl ? <img src={t.artworkUrl} alt=""/> : <Disc3 size={17}/>}</div><div className="track-labels"><b>{t.title}</b><small>{t.artist}</small></div></div>
+              <span className="muted truncate">{t.album}</span><span className="muted">{t.genre || '—'}</span><span className="muted mono">{timeLabel(t.duration)}</span>
+              <div className="row-actions"><button title="Play" onClick={() => playTrack(t, playlistTracks)}><Play size={15}/></button><button title="Remove from playlist" onClick={async () => { if (activePlaylist) { await window.myriff.removePlaylistTrack(activePlaylist.id, t.path); await refreshPlaylists() } }}><X size={16}/></button></div>
+            </div>)}</div> : <div className="empty-state compact-empty"><ListMusic size={28}/><b>{activePlaylist ? 'This playlist is empty' : 'Choose or create a playlist'}</b><span>{activePlaylist ? 'Add music from your library using the list icon.' : 'Select a playlist on the left, or create one to get started.'}</span><button className="secondary-button" onClick={() => setPage('library')}>Browse library</button></div>}
+          </section>
+        </div>}
 
         {page === 'search' && <div className="page-stack"><section className="stream-hero"><div><span className="hero-pill"><Radio size={13}/> ONLINE DISCOVERY</span><h2>Find your next<br/><span>favourite track.</span></h2><p>Search public audio results with yt-dlp. You can preview a result or add it to your queue.</p></div><div className="stream-orbit"><Radio size={54}/><span/><i/></div></section><section className="content-card"><div className="section-heading compact"><div><h2>Search audio</h2><p>Results come from the selected source.</p></div><label className="compact-select"><select value={streamSource} onChange={e => setStreamSource(e.target.value as StreamSource)}><option>YouTube Music</option><option>YouTube</option><option>SoundCloud</option></select><ChevronDown size={13}/></label></div><form className="stream-search-form" onSubmit={e => {e.preventDefault(); runStreamSearch()}}><Search size={18}/><input value={streamQuery} onChange={e => setStreamQuery(e.target.value)} placeholder="Search by track, artist or mood…"/><button className="primary-button" disabled={streamLoading}>{streamLoading ? <LoaderCircle className="spin" size={16}/> : <Search size={16}/>} Search</button></form>{streamLoading && <div className="inline-loading"><LoaderCircle size={17} className="spin"/> Searching {streamSource}…</div>}{streamResults.length > 0 && <div className="remote-results">{streamResults.map((r,i) => <div className="remote-result" key={r.id}><span className="remote-number">{String(i+1).padStart(2,'0')}</span>{r.thumbnail ? <img src={r.thumbnail} alt=""/> : <div className="remote-cover"><Music size={19}/></div>}<div className="remote-info"><b>{r.title}</b><small>{r.artist || r.source} <span>· {timeLabel(r.duration)}</span></small></div><span className="source-tag">{r.source}</span><div className="row-actions"><button title="Play now" onClick={() => { const p = asPlayable(r); playTrack(p, streamResults.map(asPlayable)) }}><Play size={16}/></button><button title="Add to queue" onClick={() => queueTrack(asPlayable(r))}><Plus size={16}/></button><button title="Download result" onClick={() => { setDownloadUrl(r.webpageUrl); setPage('downloads') }}><Download size={15}/></button></div></div>)}</div>}{!streamLoading && !streamResults.length && <div className="stream-hint"><Search size={20}/><span>Try a track title, artist name, album or genre.</span></div>}</section><section className="content-card import-card"><div className="section-heading compact"><div><h2>Import a public playlist</h2><p>Build a local playlist from tracks that are already in your library.</p></div><div className="provider-pills"><span>YouTube</span><span>SoundCloud</span><span>Spotify*</span><span>Apple Music*</span></div></div><div className="import-inputs"><label><span>Playlist URL</span><input value={importUrl} onChange={e => setImportUrl(e.target.value)} placeholder="https://…"/></label><label><span>Playlist name (optional)</span><input value={importName} onChange={e => setImportName(e.target.value)} placeholder="Imported playlist"/></label><button className="secondary-button" disabled={busy || !importUrl.trim()} onClick={runPlaylistImport}>{busy ? <LoaderCircle size={16} className="spin"/> : <Upload size={16}/>} Import tracks</button></div>{importReport && <div className="import-report"><Check size={18}/><div><b>{importReport.found} of {importReport.total} tracks found locally</b><span>{importReport.missing.length ? `${importReport.missing.length} tracks were not matched and were left out.` : 'All playlist entries matched your library.'}</span>{importReport.missing.length > 0 && <details><summary>View unmatched tracks</summary><div className="missing-list">{importReport.missing.slice(0,80).map((m,i)=><span key={`${m}-${i}`}>{m}</span>)}</div></details>}</div></div>}<p className="footnote">* Spotify and Apple Music links may not expose a playlist track list to yt-dlp. Provider support depends on current public-page access and installed yt-dlp extractors; this importer does not sign in to user accounts.</p></section></div>}
 

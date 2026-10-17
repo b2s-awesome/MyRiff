@@ -191,3 +191,30 @@ test('waveform editor supports zoom, pan and global-time mapping for precise tri
   assert.match(waveform, /visibleStartTime/)
   assert.match(waveform, /globalIndex/)
 })
+
+
+test('playlist folders are nested, survive backup restore, and never delete source tracks', () => {
+  const db = read('src/main/db.ts')
+  const ipc = read('src/main/ipc.ts')
+  const preload = read('src/preload/index.ts')
+  const types = read('src/shared/types.ts')
+  const app = read('src/renderer/src/App.tsx')
+  assert.match(db, /CREATE TABLE IF NOT EXISTS playlist_folders/)
+  assert.match(db, /parent_id INTEGER REFERENCES playlist_folders\(id\) ON DELETE CASCADE/)
+  assert.match(db, /folder_id INTEGER REFERENCES playlist_folders\(id\) ON DELETE SET NULL/)
+  assert.match(db, /ALTER TABLE playlists ADD COLUMN folder_id/)
+  assert.match(db, /export function createPlaylistFolder/)
+  assert.match(db, /export function movePlaylistToFolder/)
+  assert.match(db, /WITH RECURSIVE folder_tree\(id\)/)
+  assert.match(db, /playlistFolders: db\.prepare\('SELECT \* FROM playlist_folders'\)/)
+  assert.match(db, /INSERT OR IGNORE INTO playlists\(id,name,created_at,folder_id\)/)
+  for (const channel of ['playlist:folder-list','playlist:folder-create','playlist:folder-rename','playlist:folder-delete','playlist:move-to-folder']) {
+    assert.ok(ipc.includes(channel), `missing IPC handler ${channel}`)
+    assert.ok(preload.includes(channel), `missing preload method for ${channel}`)
+  }
+  assert.match(types, /export interface PlaylistFolder/)
+  assert.match(types, /folderId: number \| null/)
+  assert.match(app, /renderPlaylistFolder/)
+  assert.match(app, /Move playlist to folder/)
+  assert.match(app, /preserved in Unfiled/)
+})
