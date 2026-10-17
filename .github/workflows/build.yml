@@ -137,14 +137,18 @@ jobs:
       - name: Commit lockfile if dependency graph changed
         shell: bash
         run: |
-          cp dependency-lock/package-lock.json package-lock.json
-          if git diff --quiet -- package-lock.json; then
+          if git ls-files --error-unmatch package-lock.json >/dev/null 2>&1 && cmp -s dependency-lock/package-lock.json package-lock.json; then
             echo "Committed package-lock.json is already in sync."
             exit 0
           fi
+          cp dependency-lock/package-lock.json package-lock.json
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add package-lock.json
+          if git diff --cached --quiet -- package-lock.json; then
+            echo "No lockfile change to commit."
+            exit 0
+          fi
           git commit -m "chore: pin resolved npm dependency graph"
           git push origin HEAD:main
 
