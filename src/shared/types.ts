@@ -27,11 +27,20 @@ export interface Track {
   fileSize?: number
 }
 
+export interface PlaylistFolder {
+  id: number
+  name: string
+  parentId: number | null
+  createdAt: number
+  playlistCount: number
+}
+
 export interface Playlist {
   id: number
   name: string
   createdAt: number
   trackCount: number
+  folderId: number | null
 }
 
 export interface SmartPlaylist {
