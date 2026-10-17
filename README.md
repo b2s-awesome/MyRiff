@@ -161,3 +161,8 @@ Online functionality sends searches/URLs to yt-dlp's target service, lyric reque
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+
+### Nested playlist folders
+
+Playlists can be filed in folders and subfolders. Folder operations only change MyRiff's database references; they never move, rename, or delete the original audio files. Deleting a folder removes that folder subtree and returns its playlists to Unfiled. Folder structure is included in MyRiff backups.
