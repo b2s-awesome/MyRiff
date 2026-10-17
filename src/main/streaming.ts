@@ -201,7 +201,7 @@ export async function startStreamServer(settingsGetter: () => AppSettings) {
         }
         res.writeHead(upstream.status, headers)
         if (!upstream.body) { res.end(); return }
-        await pipeline(Readable.fromWeb(upstream.body), res)
+        await pipeline(Readable.fromWeb(upstream.body as unknown as import('node:stream/web').ReadableStream), res)
       } catch (error) {
         if (controller.signal.aborted || res.destroyed) return
         console.warn('MyRiff remote stream failed:', error instanceof Error ? error.message : error)
