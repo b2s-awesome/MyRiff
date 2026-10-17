@@ -90,7 +90,12 @@
         "tar.gz"
       ],
       "category": "Audio;AudioVideo",
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.png",
+      "maintainer": "MyRiff maintainers <noreply@users.noreply.github.com>"
     }
+  },
+  "author": {
+    "name": "MyRiff maintainers",
+    "email": "noreply@users.noreply.github.com"
   }
 }
