@@ -193,6 +193,11 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
   ipcMain.handle('playlist:move-to-folder', (_e, playlistId: number, folderId: number | null) => store.movePlaylistToFolder(playlistId, folderId))
   ipcMain.handle('playlist:add', (_e, id: number, paths: string[]) => store.addPlaylistTracks(id, paths))
   ipcMain.handle('playlist:remove', (_e, id: number, trackPath: string) => store.removePlaylistTrack(id, trackPath))
+  ipcMain.handle('playlist:reorder', (_e, id: number, orderedPaths: unknown) => {
+    if (!Number.isInteger(id) || id < 1) throw new Error('Choose a valid playlist.')
+    if (!Array.isArray(orderedPaths) || orderedPaths.length > 5000 || orderedPaths.some(p => typeof p !== 'string' || !p || p.length > 32768)) throw new Error('The playlist order is invalid or too large.')
+    return store.reorderPlaylistTracks(id, orderedPaths as string[])
+  })
   ipcMain.handle('playlist:source-list', () => listPlaylistSources())
   ipcMain.handle('playlist:source-save', (_e, name: string, urlInput: string, format: DownloadFormat) => {
     const parsed = new URL(urlInput.trim())
