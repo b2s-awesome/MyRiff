@@ -81,10 +81,11 @@ export default function PowerToolsPage({ tracks, current, position, settings, on
   }
   const removeMissing = async () => {
     if (!missing.length) return
+    if (settings.confirmDestructiveActions && !window.confirm(`Remove ${missing.length} missing file references from MyRiff? The original audio files will not be deleted.`)) return
     const count = await window.myriff.removeMissingTracks(missing); setMissing([]); await onRefresh(); await reload(); onNotify(`Removed ${count} missing file references. No audio files were deleted.`)
   }
   const removeIndexItem = async (path: string) => {
-    if (!confirm('Remove this track from MyRiff’s library index? The original audio file will remain untouched.')) return
+    if (settings.confirmDestructiveActions && !window.confirm('Remove this track from MyRiff’s library index? The original audio file will remain untouched.')) return
     await window.myriff.removeTracksFromIndex([path]); await onRefresh(); await reload(); setDuplicates(old=>old.map(g=>({...g,tracks:g.tracks.filter(t=>t.path!==path)})).filter(g=>g.tracks.length>1)); onNotify('Removed from the library index only.')
   }
   const createSmart = async () => {
@@ -167,7 +168,7 @@ export default function PowerToolsPage({ tracks, current, position, settings, on
   }
   const exportBackup = async () => { try { const result = await window.myriff.exportBackup(); if (result) onNotify(`Backup exported to ${result}`) } catch(e) { onNotify(e instanceof Error ? e.message : 'Backup export failed.') } }
   const importBackup = async () => {
-    if (!confirm('Restore a MyRiff backup? Matching local library data, settings and playlists will be merged. Existing tracks will not be deleted.')) return
+    if (settings.confirmDestructiveActions && !window.confirm('Restore a MyRiff backup? Matching local library data, settings and playlists will be merged. Existing tracks will not be deleted.')) return
     try { const result = await window.myriff.importBackup(); if (result) { await onRefresh(); await reload(); onNotify('Backup restored. Restart MyRiff if you imported settings that affect window behaviour.') } } catch(e) { onNotify(e instanceof Error ? e.message : 'Backup restore failed.') }
   }
 
