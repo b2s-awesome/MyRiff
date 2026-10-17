@@ -120,6 +120,8 @@ export interface AudioProfile {
   matchBy: 'manual' | 'genre' | 'artist' | 'device'
   matchValue: string
   eqBands: number[]
+  eqQ?: number
+  stereoWidth?: number
   tempo: number
   pitch: number
   reverb: number
@@ -152,6 +154,8 @@ export interface AppSettings {
   inhibitSleep: boolean
   eqPreset: string
   eqBands: number[]
+  eqQ: number
+  stereoWidth: number
   effectTempo: number
   effectPitch: number
   effectReverb: number
@@ -212,6 +216,8 @@ export interface EditorRequest {
   distortion?: number
   eqGain?: number
   eqBands?: number[]
+  eqQ?: number
+  stereoWidth?: number
   effectChain?: EffectName[]
 }
 
