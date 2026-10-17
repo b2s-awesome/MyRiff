@@ -391,11 +391,13 @@ export function restoreBackupObject(backup: any) {
     for (const row of Array.isArray(backup.lyrics) ? backup.lyrics : []) if (isKnownTrack(row.track_path)) db.prepare('INSERT OR REPLACE INTO lyrics(track_path,content_json,updated_at) VALUES(?,?,?)').run(row.track_path,row.content_json,row.updated_at)
     for (const row of Array.isArray(backup.downloads) ? backup.downloads : []) db.prepare('INSERT OR IGNORE INTO downloads(id,title,file_path,source_url,format,created_at) VALUES(?,?,?,?,?,?)').run(row.id,row.title,row.file_path,row.source_url,row.format,row.created_at)
     for (const row of Array.isArray(backup.libraryRoots) ? backup.libraryRoots : []) {
+      if (!row || typeof row !== 'object') continue
       if (typeof row.path !== 'string' || !path.isAbsolute(row.path) || row.path.length > 32768) continue
       db.prepare('INSERT OR IGNORE INTO library_roots(path,watched,last_scan) VALUES(?,?,?)')
         .run(row.path, row.watched ? 1 : 0, row.last_scan == null ? null : (Number.isFinite(Number(row.last_scan)) ? Number(row.last_scan) : null))
     }
     for (const row of Array.isArray(backup.playlistSources) ? backup.playlistSources : []) {
+      if (!row || typeof row !== 'object') continue
       if (typeof row.name !== 'string' || !row.name.trim() || row.name.length > 300 || typeof row.url !== 'string' || row.url.length > 4000) continue
       if (!['mp3','flac','opus'].includes(row.format)) continue
       let sourceUrl: URL
@@ -408,6 +410,7 @@ export function restoreBackupObject(backup: any) {
     }
     const jobStatuses = new Set(['queued','downloading','paused','finished','error','cancelled'])
     for (const row of Array.isArray(backup.downloadJobs) ? backup.downloadJobs : []) {
+      if (!row || typeof row !== 'object') continue
       if (typeof row.id !== 'string' || !row.id || row.id.length > 300 || typeof row.url !== 'string' || row.url.length > 4000) continue
       if (!['mp3','flac','opus'].includes(row.format) || !jobStatuses.has(row.status)) continue
       let sourceUrl: URL
