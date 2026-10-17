@@ -246,3 +246,17 @@ test('build workflow smoke-tests each OS and persists the lockfile after the ful
   assert.ok(workflow.includes('git push origin HEAD:main'))
   assert.ok(!workflow.includes(['name: dependency-lock', '          path: release-assets'].join('\n')))
 })
+
+
+test('metadata provider setting disables online lookup and optional auto-suggestions stay review-first', () => {
+  const ipc = read('src/main/ipc.ts')
+  const page = read('src/renderer/src/components/PowerToolsPage.tsx')
+  const settings = read('src/renderer/src/components/AdvancedSettings.tsx')
+  assert.match(ipc, /settings\.metadataProvider === 'off'/)
+  assert.match(page, /settings\.metadataProvider === 'off'/)
+  assert.match(page, /settings\.autoEnrichMetadata/)
+  assert.match(page, /activeTab !== 'metadata'/)
+  assert.match(page, /You always review a match before exporting a tagged copy/)
+  assert.match(settings, /Suggest metadata from MusicBrainz/)
+  assert.match(settings, /metadataProvider/)
+})
