@@ -41,7 +41,7 @@ function configurePlaylistScheduler(getWindow: () => BrowserWindow | null) {
           if (window && !window.isDestroyed()) window.webContents.send('download:progress', { ...progress, includePlaylist: true })
           if (['finished','error','cancelled','paused'].includes(progress.status)) {
             scheduledPlaylistSources.delete(source.id)
-            touchPlaylistSource(source.id)
+            if (progress.status === 'finished') touchPlaylistSource(source.id)
           }
         }, async (filePath, title, downloadId, sourceUrl, format) => {
           store.addDownload({ id: downloadId, title, filePath, sourceUrl, format })
