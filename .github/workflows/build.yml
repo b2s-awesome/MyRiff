@@ -90,11 +90,24 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 libgbm1 libasound2t64 libx11-xcb1 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgtk-3-0 libdrm2
+          sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libgbm1 libasound2t64 libx11-xcb1 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgtk-3-0 libdrm2
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
       - name: Build application and installer
         run: npm run ${{ matrix.script }}
+      - name: Smoke-test packaged Linux app under Xvfb
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set +e
+          timeout --signal=TERM --kill-after=5s 15s xvfb-run --auto-servernum --server-args='-screen 0 1280x800x24' ./release/linux-unpacked/myriff --no-sandbox --disable-gpu --disable-dev-shm-usage
+          status=$?
+          if [ "$status" -eq 124 ]; then
+            echo 'Packaged app stayed alive for the 15-second smoke-test window.'
+            exit 0
+          fi
+          echo "Packaged app exited before the smoke-test timeout (exit code $status)."
+          exit 1
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:
