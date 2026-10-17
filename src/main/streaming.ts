@@ -303,14 +303,16 @@ const pausedDownloads = new Set<string>()
 const pendingDownloads = new Map<string, () => void>()
 const queuedProgress = new Map<string, (progress: DownloadProgress) => void>()
 const downloadSettings = new Map<string, { concurrency: number; title: string; url: string; format: DownloadFormat }>()
+// Concurrency is a global setting: all queued jobs share the same cap, instead of
+// letting the oldest job's captured settings produce a different limit each loop.
+let globalDownloadConcurrency = 2
 
 function pumpDownloadQueue() {
   while (pendingDownloads.size) {
+    if (activeDownloads.size >= globalDownloadConcurrency) return
     const [id, launch] = pendingDownloads.entries().next().value as [string, () => void]
-    const opts = downloadSettings.get(id)
-    const limit = Math.max(1, Math.min(4, opts?.concurrency ?? 2))
-    if (activeDownloads.size >= limit) return
     pendingDownloads.delete(id)
+    if (!downloadSettings.has(id)) continue
     launch()
   }
 }
@@ -358,7 +360,8 @@ export function startDownload(
   const outTemplate = path.join(outputDir, '%(title).160B [%(id)s].%(ext)s')
   const archiveFile = path.join(outputDir, `.myriff-${format}-download-archive.txt`)
   let latestTitle = includePlaylist ? 'Playlist queued' : url
-  downloadSettings.set(id, { concurrency: Math.max(1, Math.min(4, settings.downloadConcurrency || 2)), title: latestTitle, url, format })
+  globalDownloadConcurrency = Math.max(1, Math.min(4, Number.isFinite(settings.downloadConcurrency) ? Math.floor(settings.downloadConcurrency) : 2))
+  downloadSettings.set(id, { concurrency: globalDownloadConcurrency, title: latestTitle, url, format })
   queuedProgress.set(id, onProgress)
 
   const launch = () => {
