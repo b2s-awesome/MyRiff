@@ -40,7 +40,8 @@ export async function fetchLyrics(title: string, artist: string, album: string, 
   return { synced: Boolean(synced), lines: synced ? parseLrc(synced) : plain.split(/\r?\n/).filter(Boolean).map(text => ({ time: null, text })), provider: 'LRCLIB', source: 'https://lrclib.net' }
 }
 export async function chooseAndParseLrc(parent?: BrowserWindow | null) {
-  const result = await dialog.showOpenDialog(parent ?? undefined, { title: 'Import LRC lyrics', properties: ['openFile'], filters: [{ name: 'Lyrics', extensions: ['lrc', 'txt'] }] })
+  const options = { title: 'Import LRC lyrics', properties: ['openFile'] as Array<'openFile'>, filters: [{ name: 'Lyrics', extensions: ['lrc', 'txt'] }] }
+  const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
   if (result.canceled || !result.filePaths[0]) return null
   const content = await fs.readFile(result.filePaths[0], 'utf8')
   return { lines: parseLrc(content), path: result.filePaths[0], synced: /\[\d{1,2}:\d{2}/.test(content) }
