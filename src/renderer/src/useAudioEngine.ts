@@ -6,10 +6,14 @@ import type { AppSettings, EffectName } from '../../shared/types'
 
 const FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
 
-export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, settings: AppSettings | null) {
+export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, settings: AppSettings | null, nextAudioRef?: RefObject<HTMLAudioElement | null>) {
   const contextRef = useRef<AudioContext | null>(null)
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null)
   const soundTouchRef = useRef<SoundTouchNode | null>(null)
+  const nextSourceRef = useRef<MediaElementAudioSourceNode | null>(null)
+  const nextSoundTouchRef = useRef<SoundTouchNode | null>(null)
+  const primaryFadeGainRef = useRef<GainNode | null>(null)
+  const nextFadeGainRef = useRef<GainNode | null>(null)
   const inputRef = useRef<GainNode | null>(null)
   const filtersRef = useRef<BiquadFilterNode[]>([])
   const distortionRef = useRef<WaveShaperNode | null>(null)
@@ -58,16 +62,38 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
       const ctx: AudioContext = new AudioContextCtor()
       const source = ctx.createMediaElementSource(audio)
       const input = ctx.createGain()
+      const primaryFadeGain = ctx.createGain(); primaryFadeGain.gain.value = 1
+      const nextFadeGain = ctx.createGain(); nextFadeGain.gain.value = 0
       let soundTouch: SoundTouchNode | null = null
       try {
         await SoundTouchNode.register(ctx, processorUrl)
         soundTouch = new SoundTouchNode({ context: ctx })
-        soundTouch.connect(input)
-        audio.preservesPitch = false
+        source.connect(soundTouch); soundTouch.connect(primaryFadeGain)
+        audio.preservesPitch = true
       } catch (error) {
         console.warn('MyRiff pitch-preserving time-stretch worklet could not start; using native playback rate:', error)
         soundTouch = null
+        source.connect(primaryFadeGain)
       }
+      let nextSource: MediaElementAudioSourceNode | null = null
+      let nextSoundTouch: SoundTouchNode | null = null
+      const nextAudio = nextAudioRef?.current
+      if (nextAudio) {
+        try {
+          nextSource = ctx.createMediaElementSource(nextAudio)
+          if (soundTouch) {
+            nextSoundTouch = new SoundTouchNode({ context: ctx })
+            nextSource.connect(nextSoundTouch); nextSoundTouch.connect(nextFadeGain)
+            nextAudio.preservesPitch = true
+          } else nextSource.connect(nextFadeGain)
+        } catch (error) {
+          console.warn('MyRiff preloaded-track DSP could not use the worklet; using native rate control:', error)
+          if (nextSource && !nextSoundTouch) nextSource.connect(nextFadeGain)
+          nextSoundTouch = null
+        }
+      }
+      primaryFadeGain.connect(input)
+      nextFadeGain.connect(input)
       const filters: BiquadFilterNode[] = []
       FREQUENCIES.forEach(frequency => {
         const filter = ctx.createBiquadFilter(); filter.type = 'peaking'; filter.frequency.value = frequency; filter.Q.value = 1.1; filter.gain.value = 0
@@ -83,19 +109,50 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
       }
       convolver.buffer = impulse
       const analyser = ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = .82
-      if (soundTouch) source.connect(soundTouch); else source.connect(input)
-      sourceRef.current = source; soundTouchRef.current = soundTouch; inputRef.current = input; filtersRef.current = filters; distortionRef.current = distortion
+      sourceRef.current = source; soundTouchRef.current = soundTouch
+      nextSourceRef.current = nextSource; nextSoundTouchRef.current = nextSoundTouch
+      primaryFadeGainRef.current = primaryFadeGain; nextFadeGainRef.current = nextFadeGain
+      inputRef.current = input; filtersRef.current = filters; distortionRef.current = distortion
       dryRef.current = dry; wetRef.current = wet; reverbMixRef.current = reverbMix; convolverRef.current = convolver; analyserRef.current = analyser
       contextRef.current = ctx
       const setSinkId = (ctx as AudioContext & { setSinkId?: (id: string) => Promise<void> }).setSinkId
       if (settings?.audioOutputDeviceId && setSinkId) await setSinkId.call(ctx, settings.audioOutputDeviceId).catch(error => console.warn('Audio output selection failed:', error))
       rebuildGraph()
       if (soundTouch) { const tempo = Math.max(0.5, Math.min(2, settings?.effectTempo ?? 1)); audio.playbackRate = 1; audio.preservesPitch = true; soundTouch.playbackRate.value = tempo; soundTouch.pitch.value = 1; soundTouch.pitchSemitones.value = Math.max(-24, Math.min(24, settings?.effectPitch ?? 0)) }
+      if (nextSoundTouch) { nextSoundTouch.playbackRate.value = Math.max(0.5, Math.min(2, settings?.effectTempo ?? 1)); nextSoundTouch.pitch.value = 1; nextSoundTouch.pitchSemitones.value = Math.max(-24, Math.min(24, settings?.effectPitch ?? 0)) }
     }
     if (contextRef.current.state === 'suspended') await contextRef.current.resume()
   }, [audioRef, rebuildGraph, settings?.audioOutputDeviceId])
 
   useEffect(() => { if (contextRef.current) rebuildGraph() }, [settings?.effectChain, rebuildGraph])
+
+  const resetCrossfade = useCallback(() => {
+    const ctx = contextRef.current; const primary = primaryFadeGainRef.current?.gain; const secondary = nextFadeGainRef.current?.gain
+    if (!ctx || !primary || !secondary) return
+    const now = ctx.currentTime
+    primary.cancelScheduledValues(now); secondary.cancelScheduledValues(now)
+    primary.setTargetAtTime(1, now, 0.012); secondary.setTargetAtTime(0, now, 0.012)
+  }, [])
+
+  const crossfadeToNext = useCallback((seconds: number) => {
+    const ctx = contextRef.current; const primary = primaryFadeGainRef.current?.gain; const secondary = nextFadeGainRef.current?.gain
+    if (!ctx || !primary || !secondary || !Number.isFinite(seconds) || seconds <= 0) return false
+    const now = ctx.currentTime; const end = now + Math.max(0.08, Math.min(20, seconds))
+    primary.cancelScheduledValues(now); secondary.cancelScheduledValues(now)
+    primary.setValueAtTime(primary.value, now); secondary.setValueAtTime(secondary.value, now)
+    primary.linearRampToValueAtTime(0, end); secondary.linearRampToValueAtTime(1, end)
+    return true
+  }, [])
+
+  const handoffToMain = useCallback((seconds = 0.16) => {
+    const ctx = contextRef.current; const primary = primaryFadeGainRef.current?.gain; const secondary = nextFadeGainRef.current?.gain
+    if (!ctx || !primary || !secondary) return false
+    const now = ctx.currentTime; const end = now + Math.max(0.04, Math.min(2, seconds))
+    primary.cancelScheduledValues(now); secondary.cancelScheduledValues(now)
+    primary.setValueAtTime(primary.value, now); secondary.setValueAtTime(secondary.value, now)
+    primary.linearRampToValueAtTime(1, end); secondary.linearRampToValueAtTime(0, end)
+    return true
+  }, [])
 
   useEffect(() => {
     if (!settings) return
@@ -113,9 +170,9 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
     const reverb = Math.max(0, Math.min(1, settings.effectReverb))
     if (dryRef.current) dryRef.current.gain.setTargetAtTime(bypass ? 1 : 1 - reverb * .45, now, .03)
     if (wetRef.current) wetRef.current.gain.setTargetAtTime(bypass ? 0 : reverb * .8, now, .03)
+    const tempo = Math.max(0.5, Math.min(2, settings.effectTempo))
+    const pitch = Math.max(-24, Math.min(24, settings.effectPitch))
     if (audioRef.current) {
-      const tempo = Math.max(0.5, Math.min(2, settings.effectTempo))
-      const pitch = Math.max(-24, Math.min(24, settings.effectPitch))
       if (soundTouchRef.current) {
         audioRef.current.preservesPitch = true
         audioRef.current.playbackRate = 1
@@ -128,8 +185,25 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
         audioRef.current.playbackRate = Math.max(.25, Math.min(4, tempo * Math.pow(2, pitch / 12)))
       }
     }
-  }, [settings, audioRef])
+    if (nextAudioRef?.current) {
+      if (nextSoundTouchRef.current) {
+        nextAudioRef.current.preservesPitch = true
+        nextAudioRef.current.playbackRate = 1
+        nextSoundTouchRef.current.playbackRate.setTargetAtTime(tempo, now, .02)
+        nextSoundTouchRef.current.pitch.setTargetAtTime(1, now, .02)
+        nextSoundTouchRef.current.pitchSemitones.setTargetAtTime(pitch, now, .02)
+      } else {
+        nextAudioRef.current.preservesPitch = false
+        nextAudioRef.current.playbackRate = Math.max(.25, Math.min(4, tempo * Math.pow(2, pitch / 12)))
+      }
+    }
+  }, [settings, audioRef, nextAudioRef])
 
-  useEffect(() => () => { soundTouchRef.current?.disconnect(); contextRef.current?.close().catch(() => undefined) }, [])
-  return { ensureGraph, context: contextRef, analyser: analyserRef }
+  useEffect(() => () => {
+    soundTouchRef.current?.disconnect(); nextSoundTouchRef.current?.disconnect()
+    sourceRef.current?.disconnect(); nextSourceRef.current?.disconnect()
+    primaryFadeGainRef.current?.disconnect(); nextFadeGainRef.current?.disconnect()
+    contextRef.current?.close().catch(() => undefined)
+  }, [])
+  return { ensureGraph, context: contextRef, analyser: analyserRef, crossfadeToNext, handoffToMain, resetCrossfade }
 }

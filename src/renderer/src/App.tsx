@@ -24,17 +24,22 @@ import './styles.css'
 type Page = 'library' | 'playlists' | 'search' | 'downloads' | 'playlist-studio' | 'power-tools' | 'radio' | 'editor' | 'lyrics' | 'sound' | 'settings'
 type PlayableTrack = Track & { streamUrl?: string; streamSource?: StreamSource; originalUrl?: string }
 type DownloadRecord = { id: string; title: string; filePath: string; sourceUrl: string; format: string; createdAt: number }
+type CrossfadeEntry = { track: PlayableTrack; source: string; phase: 'loading' | 'ready' | 'fading' | 'handoff'; fadeSeconds: number }
+const samePlayable = (a: PlayableTrack | null | undefined, b: PlayableTrack | null | undefined) => Boolean(a && b && a.path === b.path && a.streamUrl === b.streamUrl)
 const timeLabel = (value: number) => `${Math.floor(Math.max(0, value) / 60)}:${String(Math.floor(Math.max(0, value) % 60)).padStart(2, '0')}`
 const defaultLines: LyricLine[] = []
 
 export default function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const nextAudioRef = useRef<HTMLAudioElement | null>(null)
+  const crossfadeRef = useRef<CrossfadeEntry | null>(null)
   const autoPlayRef = useRef(false)
   const pendingPositionRef = useRef<number | null>(null)
   const lastSavedRef = useRef(0)
   const [settings, setSettings] = useState<AppSettings | null>(null)
-  const audioEngine = useAudioEngine(audioRef, settings)
-  const { ensureGraph, analyser } = audioEngine
+  const [crossfadeEpoch, setCrossfadeEpoch] = useState(0)
+  const audioEngine = useAudioEngine(audioRef, settings, nextAudioRef)
+  const { ensureGraph, analyser, crossfadeToNext, handoffToMain, resetCrossfade } = audioEngine
   const [tracks, setTracks] = useState<Track[]>([])
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [downloads, setDownloads] = useState<DownloadRecord[]>([])
@@ -203,7 +208,29 @@ export default function App() {
     return ()=>{cancelled=true}
   }, [current?.path, current?.streamUrl])
 
+  const clearCrossfade = useCallback(() => {
+    crossfadeRef.current = null
+    const next = nextAudioRef.current
+    if (next) { next.pause(); next.currentTime = 0; next.removeAttribute('src'); next.load() }
+    resetCrossfade()
+  }, [resetCrossfade])
+
+  const peekNextTrack = useCallback((): PlayableTrack | null => {
+    const waiting = queueRef.current
+    if (waiting.length) return waiting[0]
+    const context = playContextRef.current
+    if (!context.length) return null
+    const index = context.findIndex(t => t.path === currentRef.current?.path && t.streamUrl === currentRef.current?.streamUrl)
+    if (repeat === 'all') return context[(index + 1 + context.length) % context.length] || null
+    if (shuffle && context.length > 1) {
+      const options = context.filter(t => !samePlayable(t, currentRef.current))
+      return options.length ? options[Math.floor(Math.random() * options.length)] : null
+    }
+    return index >= 0 && index < context.length - 1 ? context[index + 1] : null
+  }, [repeat, shuffle])
+
   const playTrack = useCallback((track: PlayableTrack, context?: PlayableTrack[], autoplay = true) => {
+    clearCrossfade()
     autoPlayRef.current = autoplay
     if (context) {
       const all = context
@@ -214,11 +241,13 @@ export default function App() {
     }
     setPosition(0); setDuration(track.duration || 0); pendingPositionRef.current = null
     setCurrent(track)
-  }, [shuffle])
+  }, [shuffle, clearCrossfade])
 
   useEffect(() => {
     let cancelled = false
     if (!current) { setAudioSrc(''); return }
+    const pending = crossfadeRef.current
+    if (pending?.phase === 'handoff' && samePlayable(pending.track, current)) { setAudioSrc(pending.source); return }
     ;(async () => {
       try {
         const source = current.streamUrl ? await window.myriff.playStream(current.streamUrl) : await window.myriff.mediaUrl(current.path)
@@ -228,6 +257,34 @@ export default function App() {
     return () => { cancelled = true }
   }, [current?.path, current?.streamUrl, notify])
 
+  useEffect(() => {
+    const secondary = nextAudioRef.current
+    if (!secondary) return
+    if (crossfadeRef.current?.phase === 'handoff') return
+    if (!current || !settings?.crossfadeSeconds || repeat === 'one') { clearCrossfade(); return }
+    const track = peekNextTrack()
+    if (!track || samePlayable(track, current)) { clearCrossfade(); return }
+    const existing = crossfadeRef.current
+    if (existing && samePlayable(existing.track, track) && ['loading', 'ready', 'fading'].includes(existing.phase)) return
+    clearCrossfade()
+    const entry: CrossfadeEntry = { track, source: '', phase: 'loading', fadeSeconds: 0 }
+    crossfadeRef.current = entry
+    let cancelled = false
+    ;(async () => {
+      const source = track.streamUrl ? await window.myriff.playStream(track.streamUrl) : await window.myriff.mediaUrl(track.path)
+      if (cancelled || crossfadeRef.current !== entry) return
+      entry.source = source
+      secondary.src = source
+      secondary.load()
+    })().catch(error => {
+      if (!cancelled && crossfadeRef.current === entry) {
+        crossfadeRef.current = null
+        console.debug('MyRiff crossfade preload failed; normal next-track playback remains available.', error)
+      }
+    })
+    return () => { cancelled = true }
+  }, [current?.path, current?.streamUrl, queue, playContext, repeat, shuffle, settings?.crossfadeSeconds, crossfadeEpoch, peekNextTrack, clearCrossfade])
+
   const togglePlay = useCallback(async () => {
     const audio = audioRef.current
     if (!audio) return
@@ -235,8 +292,11 @@ export default function App() {
       if (!audio.src && current) return
       try { await audioEngine.ensureGraph(); await audio.play(); setPlaying(true) }
       catch (e) { notify(e instanceof Error ? e.message : 'Playback could not start.') }
-    } else { audio.pause(); setPlaying(false) }
-  }, [audioEngine, current, notify])
+    } else {
+      audio.pause(); setPlaying(false)
+      if (crossfadeRef.current?.phase === 'fading') clearCrossfade()
+    }
+  }, [audioEngine, current, notify, clearCrossfade])
 
   const nextTrack = useCallback(() => {
     const waiting = queueRef.current
@@ -263,9 +323,47 @@ export default function App() {
     else if (currentRef.current) { if (audio) audio.currentTime = 0; setPosition(0) }
   }, [playTrack])
   const handleEnded = useCallback(() => {
+    const transition = crossfadeRef.current
+    const secondary = nextAudioRef.current
+    if (transition?.phase === 'fading' && secondary && !secondary.paused && samePlayable(transition.track, peekNextTrack())) {
+      transition.phase = 'handoff'
+      const waiting = queueRef.current
+      if (waiting.length && samePlayable(waiting[0], transition.track)) setQueue(waiting.slice(1))
+      pendingPositionRef.current = null
+      autoPlayRef.current = true
+      setDuration(transition.track.duration || 0)
+      setPosition(secondary.currentTime)
+      setCurrent(transition.track)
+      return
+    }
     if (repeat === 'one' && audioRef.current) { audioRef.current.currentTime = 0; audioRef.current.play().catch(() => undefined); return }
     nextTrack()
-  }, [nextTrack, repeat])
+  }, [nextTrack, repeat, peekNextTrack])
+
+  const maybeStartCrossfade = useCallback((audio: HTMLAudioElement) => {
+    const transition = crossfadeRef.current
+    const secondary = nextAudioRef.current
+    const fadeConfigured = Number(settings?.crossfadeSeconds || 0)
+    if (!transition || transition.phase !== 'ready' || !secondary || !fadeConfigured || repeat === 'one' || !Number.isFinite(audio.duration)) return
+    const remaining = audio.duration - audio.currentTime
+    if (remaining > fadeConfigured || remaining <= 0.12) return
+    transition.phase = 'fading'
+    transition.fadeSeconds = Math.max(0.12, Math.min(fadeConfigured, remaining))
+    const gainDb = settings?.normalizeLoudness && Number.isFinite(transition.track.replayGainDb) ? Number(transition.track.replayGainDb) : 0
+    secondary.volume = Math.max(0, Math.min(1, volume * Math.pow(10, gainDb / 20)))
+    secondary.currentTime = 0
+    ensureGraph().then(() => secondary.play()).then(() => {
+      if (crossfadeRef.current !== transition) { secondary.pause(); return }
+      if (!crossfadeToNext(transition.fadeSeconds)) throw new Error('Crossfade gain graph is unavailable.')
+    }).catch(error => {
+      if (crossfadeRef.current === transition) {
+        crossfadeRef.current = null
+        secondary.pause(); secondary.currentTime = 0
+        resetCrossfade()
+        console.debug('Crossfade could not start; normal next-track playback remains available.', error)
+      }
+    })
+  }, [settings?.crossfadeSeconds, settings?.normalizeLoudness, repeat, volume, ensureGraph, crossfadeToNext, resetCrossfade])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -514,9 +612,40 @@ export default function App() {
   return <div className={`app-shell theme-${settings.theme === 'system' ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : settings.theme} density-${settings.uiDensity} ${settings.animationsEnabled ? '' : 'animations-off'} ${settings.showArtworkBackground ? 'art-background-on' : ''} ${mini ? 'mini-mode' : ''}`} style={themeStyle}>
     <style id="myriff-custom-css">{settings.customCss}</style>
     <audio ref={audioRef} crossOrigin="anonymous" onCanPlay={() => {
-      if (pendingPositionRef.current !== null && audioRef.current) { audioRef.current.currentTime = pendingPositionRef.current; setPosition(pendingPositionRef.current); pendingPositionRef.current = null }
-      if (autoPlayRef.current && audioRef.current) { autoPlayRef.current = false; ensureGraph().then(() => audioRef.current?.play()).then(() => setPlaying(true)).catch(e => notify(e instanceof Error ? e.message : 'Playback failed.')) }
-    }} onPlay={() => { setPlaying(true); window.myriff.setPlaybackStatus(true).catch(()=>undefined); const key = `${current?.path || current?.streamUrl || ''}`; if (key && lastRecordedTrackRef.current !== `played:${key}`) { lastRecordedTrackRef.current = `played:${key}`; window.myriff.recordPlayedTrack({ trackPath: current?.streamUrl ? null : current?.path, title: current?.title || '', artist: current?.artist || '', source: current?.streamSource || 'local' }).then(refreshTracks).catch(() => undefined) } }} onPause={() => { setPlaying(false); window.myriff.setPlaybackStatus(false).catch(()=>undefined); if(audioRef.current) savePlayback(audioRef.current.currentTime,true) }} onEnded={handleEnded} onDurationChange={e => setDuration(Number.isFinite(e.currentTarget.duration) ? e.currentTarget.duration : current?.duration || 0)} onTimeUpdate={e => { const audio=e.currentTarget; const at = audio.currentTime; setPosition(at); savePlayback(at); if(settings.crossfadeSeconds>0 && Number.isFinite(audio.duration) && audio.duration>0){const fade=settings.crossfadeSeconds;const fadeIn=Math.min(1,at/fade);const fadeOut=Math.min(1,Math.max(0,(audio.duration-at)/fade));const gainDb=settings.normalizeLoudness && Number.isFinite(current?.replayGainDb)?Number(current?.replayGainDb):0;audio.volume=Math.max(0,Math.min(1,volume*Math.pow(10,gainDb/20)*Math.min(fadeIn,fadeOut)))} if(page==='editor' && current?.path===selectedEditorPath && editEnd>editStart && at>=editEnd){audio.pause();audio.currentTime=editEnd;setPosition(editEnd);setPlaying(false)} }} onError={() => { if (audioSrc) { setPlaying(false); notify('This source could not be played. Check the file or your yt-dlp version.') } }} />
+      const audio = audioRef.current
+      if (!audio) return
+      const transition = crossfadeRef.current
+      if (transition?.phase === 'handoff' && samePlayable(transition.track, current)) {
+        const secondary = nextAudioRef.current
+        if (secondary && Number.isFinite(secondary.currentTime)) { audio.currentTime = secondary.currentTime; setPosition(secondary.currentTime) }
+      } else if (pendingPositionRef.current !== null) {
+        audio.currentTime = pendingPositionRef.current; setPosition(pendingPositionRef.current); pendingPositionRef.current = null
+      }
+      if (autoPlayRef.current) {
+        autoPlayRef.current = false
+        ensureGraph().then(() => audio.play()).then(() => {
+          setPlaying(true)
+          const handoff = crossfadeRef.current
+          if (handoff?.phase === 'handoff' && samePlayable(handoff.track, current)) {
+            const secondary = nextAudioRef.current
+            const durationMs = 160
+            handoffToMain(durationMs / 1000)
+            window.setTimeout(() => {
+              if (crossfadeRef.current !== handoff) return
+              if (secondary) { secondary.pause(); secondary.currentTime = 0; secondary.removeAttribute('src'); secondary.load() }
+              crossfadeRef.current = null; resetCrossfade(); setCrossfadeEpoch(value => value + 1)
+            }, durationMs + 60)
+          }
+        }).catch(e => notify(e instanceof Error ? e.message : 'Playback failed.'))
+      }
+    }} onPlay={() => { setPlaying(true); window.myriff.setPlaybackStatus(true).catch(()=>undefined); const key = `${current?.path || current?.streamUrl || ''}`; if (key && lastRecordedTrackRef.current !== `played:${key}`) { lastRecordedTrackRef.current = `played:${key}`; window.myriff.recordPlayedTrack({ trackPath: current?.streamUrl ? null : current?.path, title: current?.title || '', artist: current?.artist || '', source: current?.streamSource || 'local' }).then(refreshTracks).catch(() => undefined) } }} onPause={() => { if (crossfadeRef.current?.phase === 'fading' || crossfadeRef.current?.phase === 'handoff') { setPlaying(true); return } setPlaying(false); window.myriff.setPlaybackStatus(false).catch(()=>undefined); if(audioRef.current) savePlayback(audioRef.current.currentTime,true) }} onEnded={handleEnded} onDurationChange={e => setDuration(Number.isFinite(e.currentTarget.duration) ? e.currentTarget.duration : current?.duration || 0)} onTimeUpdate={e => { const audio=e.currentTarget; const at = audio.currentTime; setPosition(at); savePlayback(at); maybeStartCrossfade(audio); if(page==='editor' && current?.path===selectedEditorPath && editEnd>editStart && at>=editEnd){audio.pause();audio.currentTime=editEnd;setPosition(editEnd);setPlaying(false)} }} onError={() => { if (audioSrc) { setPlaying(false); notify('This source could not be played. Check the file or your yt-dlp version.') } }} />
+    <audio ref={nextAudioRef} crossOrigin="anonymous" preload="auto" style={{ display: 'none' }} onCanPlay={() => {
+      const entry = crossfadeRef.current
+      if (entry?.phase === 'loading' && entry.source && nextAudioRef.current?.currentSrc) entry.phase = 'ready'
+    }} onError={() => {
+      const entry = crossfadeRef.current
+      if (entry?.phase === 'loading' || entry?.phase === 'ready') { crossfadeRef.current = null; resetCrossfade() }
+    }} />
     {!mini && <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><Music2 size={21}/></div><div><b>MyRiff</b><span>YOUR MUSIC SPACE</span></div></div>
       <button className="scan-button" onClick={() => scanFolder()} disabled={busy}><Plus size={17}/><span>Scan music folder</span>{busy && <LoaderCircle className="spin" size={15}/>}</button>
