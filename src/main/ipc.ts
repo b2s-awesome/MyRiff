@@ -397,7 +397,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       'theme','accent','dynamicAccent','customCss','uiDensity','cornerRadius','uiScale','sidebarWidth','gridColumns',
       'animationsEnabled','showArtworkBackground','showVisualizer','visualizerStyle','visualizerSensitivity','viewMode',
       'groupBy','showTrackNumbers','showYear','showGenre','defaultPage','useSystemTitlebar','eqPreset','eqBands',
-      'effectTempo','effectPitch','effectReverb','effectDistortion','effectChain','effectsBypass','crossfadeSeconds',
+      'effectTempo','effectPitch','effectReverb','effectDistortion','eqQ','stereoWidth','effectChain','effectsBypass','crossfadeSeconds',
       'normalizeLoudness','loudnessTargetLufs','audioOutputDeviceId','audioProfiles','keyboardShortcuts'
     ] as const
     const values: Record<string, unknown> = {}
@@ -421,7 +421,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       'theme','accent','dynamicAccent','customCss','uiDensity','cornerRadius','uiScale','sidebarWidth','gridColumns',
       'animationsEnabled','showArtworkBackground','showVisualizer','visualizerStyle','visualizerSensitivity','viewMode',
       'groupBy','showTrackNumbers','showYear','showGenre','defaultPage','useSystemTitlebar','eqPreset','eqBands',
-      'effectTempo','effectPitch','effectReverb','effectDistortion','effectChain','effectsBypass','crossfadeSeconds',
+      'effectTempo','effectPitch','effectReverb','effectDistortion','eqQ','stereoWidth','effectChain','effectsBypass','crossfadeSeconds',
       'normalizeLoudness','loudnessTargetLufs','audioOutputDeviceId','audioProfiles','keyboardShortcuts'
     ])
     const current = store.getSettings() as unknown as Record<string, unknown>
@@ -447,6 +447,8 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       if (key === 'visualizerSensitivity' && (Number(value) < 0.1 || Number(value) > 4)) continue
       if (key === 'crossfadeSeconds' && (Number(value) < 0 || Number(value) > 12)) continue
       if (key === 'effectTempo' && (Number(value) < 0.5 || Number(value) > 2)) continue
+      if (key === 'eqQ' && (Number(value) < 0.3 || Number(value) > 8)) continue
+      if (key === 'stereoWidth' && (Number(value) < 0 || Number(value) > 2)) continue
       if (key === 'effectPitch' && (Number(value) < -24 || Number(value) > 24)) continue
       if (['effectReverb','effectDistortion'].includes(key) && (Number(value) < 0 || Number(value) > 1)) continue
       if (key === 'loudnessTargetLufs' && (Number(value) < -23 || Number(value) > -8)) continue
@@ -459,7 +461,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       }
       if (key === 'audioProfiles') {
         const profiles = value as unknown[]
-        const valid = Array.isArray(profiles) && profiles.length <= 100 && profiles.every((item: any) => item && typeof item === 'object' && typeof item.id === 'string' && item.id.length <= 100 && typeof item.name === 'string' && item.name.length <= 100 && ['manual','genre','artist','device'].includes(item.matchBy) && typeof item.matchValue === 'string' && item.matchValue.length <= 300 && Array.isArray(item.eqBands) && item.eqBands.length === 10 && item.eqBands.every((v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= -24 && v <= 24) && typeof item.tempo === 'number' && Number.isFinite(item.tempo) && item.tempo >= 0.5 && item.tempo <= 2 && typeof item.pitch === 'number' && Number.isFinite(item.pitch) && item.pitch >= -12 && item.pitch <= 12 && typeof item.reverb === 'number' && Number.isFinite(item.reverb) && item.reverb >= 0 && item.reverb <= 1 && typeof item.distortion === 'number' && Number.isFinite(item.distortion) && item.distortion >= 0 && item.distortion <= 1 && typeof item.enabled === 'boolean')
+        const valid = Array.isArray(profiles) && profiles.length <= 100 && profiles.every((item: any) => item && typeof item === 'object' && typeof item.id === 'string' && item.id.length <= 100 && typeof item.name === 'string' && item.name.length <= 100 && ['manual','genre','artist','device'].includes(item.matchBy) && typeof item.matchValue === 'string' && item.matchValue.length <= 300 && Array.isArray(item.eqBands) && item.eqBands.length === 10 && item.eqBands.every((v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= -24 && v <= 24) && (item.eqQ === undefined || (typeof item.eqQ === 'number' && Number.isFinite(item.eqQ) && item.eqQ >= 0.3 && item.eqQ <= 8)) && (item.stereoWidth === undefined || (typeof item.stereoWidth === 'number' && Number.isFinite(item.stereoWidth) && item.stereoWidth >= 0 && item.stereoWidth <= 2)) && typeof item.tempo === 'number' && Number.isFinite(item.tempo) && item.tempo >= 0.5 && item.tempo <= 2 && typeof item.pitch === 'number' && Number.isFinite(item.pitch) && item.pitch >= -12 && item.pitch <= 12 && typeof item.reverb === 'number' && Number.isFinite(item.reverb) && item.reverb >= 0 && item.reverb <= 1 && typeof item.distortion === 'number' && Number.isFinite(item.distortion) && item.distortion >= 0 && item.distortion <= 1 && typeof item.enabled === 'boolean')
         if (!valid) continue
       }
       patch[key] = value
