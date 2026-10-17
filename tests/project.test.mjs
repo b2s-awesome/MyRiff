@@ -260,3 +260,21 @@ test('metadata provider setting disables online lookup and optional auto-suggest
   assert.match(settings, /Suggest metadata from MusicBrainz/)
   assert.match(settings, /metadataProvider/)
 })
+
+test('startup-page customisation includes every navigation destination and survives IPC validation', () => {
+  const types = read('src/shared/types.ts')
+  const settings = read('src/renderer/src/components/AdvancedSettings.tsx')
+  const ipc = read('src/main/ipc.ts')
+  for (const page of ['library','playlists','search','downloads','playlist-studio','power-tools','radio','editor','lyrics','sound','settings']) {
+    assert.ok(types.includes("'" + page + "'"), `defaultPage type missing ${page}`)
+    assert.ok(settings.includes('value="' + page + '"'), `start-page option missing ${page}`)
+    assert.ok(ipc.includes("'" + page + "'"), `settings validation missing ${page}`)
+  }
+})
+
+test('confirm-destructive-actions preference gates destructive library cleanup and backup restore', () => {
+  const page = read('src/renderer/src/components/PowerToolsPage.tsx')
+  assert.ok(page.includes('settings.confirmDestructiveActions && !window.confirm(`Remove ${missing.length} missing file references'))
+  assert.ok(page.includes("settings.confirmDestructiveActions && !window.confirm('Remove this track from MyRiff"))
+  assert.ok(page.includes("settings.confirmDestructiveActions && !window.confirm('Restore a MyRiff backup"))
+})
