@@ -174,3 +174,20 @@ test('remote streaming forwards source MIME and valid byte ranges and cleans up 
   assert.match(source, /liveStreamRequests\.clear\(\)/)
   assert.doesNotMatch(source, /'Content-Type': 'audio\/webm'/)
 })
+
+
+test('playback lab exposes ordered DSP chain controls and same-position bypass comparison', async () => {
+  const panel = await read('src/renderer/src/components/EffectsPanel.tsx')
+  assert.match(panel, /Effect chain/)
+  assert.match(panel, /moveEffect/)
+  assert.match(panel, /effectsBypass: !settings\.effectsBypass/)
+  assert.match(panel, /A\/B toggles the DSP bypass without seeking/)
+})
+
+test('waveform editor supports zoom, pan and global-time mapping for precise trim work', async () => {
+  const waveform = await read('src/renderer/src/components/WaveformPreview.tsx')
+  assert.match(waveform, /setZoom/)
+  assert.match(waveform, /setViewOffset/)
+  assert.match(waveform, /visibleStartTime/)
+  assert.match(waveform, /globalIndex/)
+})
