@@ -244,5 +244,5 @@ test('build workflow smoke-tests each OS and persists the lockfile after the ful
   assert.ok(workflow.includes('persist-lockfile:'))
   assert.ok(workflow.includes('needs: [resolve-dependencies, validate, build]'))
   assert.ok(workflow.includes('git push origin HEAD:main'))
-  assert.ok(!workflow.includes(['name: dependency-lock', '          path: release-assets'].join('\\n')))
+  assert.ok(!workflow.includes(['name: dependency-lock', '          path: release-assets'].join('\n')))
 })
