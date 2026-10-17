@@ -125,3 +125,14 @@
 .playlist-folder-select-field>span{font-size:9px;color:var(--muted)}
 .playlist-folder-select-field select{max-width:min(220px,38vw);border:0;outline:none;background:transparent;color:var(--text);font-size:9px;min-width:75px}
 @media(max-width:760px){.playlist-folder-row{min-height:35px}.playlist-folder-actions{opacity:1}.playlist-folder-select-field{flex-wrap:wrap}.playlist-folder-select-field select{max-width:170px}}
+
+.playlist-track-row[draggable="true"]{cursor:grab;transition:background .12s ease,opacity .12s ease}
+.playlist-track-row[draggable="true"]:active{cursor:grabbing}
+.playlist-track-row.dragging{opacity:.48}
+.playlist-track-row.drop-target{background:var(--accent-soft);box-shadow:inset 0 2px 0 var(--accent)}
+.playlist-track-row .row-actions .icon-button:disabled{opacity:.24;cursor:default}
+
+.playlist-track-row{grid-template-columns:minmax(220px,2.5fr) minmax(100px,1.25fr) minmax(70px,.8fr) 55px 120px}
+.playlist-track-row .row-actions{opacity:1;gap:0;min-width:0}
+.playlist-track-row .row-actions button{padding:4px;min-width:23px}
+@media(max-width:760px){.playlist-track-row{grid-template-columns:minmax(0,1fr) 45px 122px;gap:6px}.playlist-track-row .row-actions{justify-content:flex-end}.playlist-track-row .row-actions button{padding:3px;min-width:22px}}

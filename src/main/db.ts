@@ -234,6 +234,22 @@ export function removePlaylistTrack(id: number, trackPath: string) {
   const tx = db.transaction(() => rows.forEach((r, i) => set.run(i, id, r.track_path)))
   tx(); return getPlaylistTracks(id)
 }
+export function reorderPlaylistTracks(id: number, orderedPaths: string[]) {
+  if (!Number.isInteger(id) || id < 1) throw new Error('Choose a valid playlist.')
+  if (!Array.isArray(orderedPaths) || orderedPaths.length > 5000 || orderedPaths.some(p => typeof p !== 'string' || !p || p.length > 32768)) {
+    throw new Error('The playlist order is invalid or too large.')
+  }
+  if (!db.prepare('SELECT 1 FROM playlists WHERE id=?').get(id)) throw new Error('Playlist not found.')
+  if (new Set(orderedPaths).size !== orderedPaths.length) throw new Error('A playlist cannot contain duplicate entries in its order.')
+  const currentPaths = (db.prepare('SELECT track_path FROM playlist_tracks WHERE playlist_id=? ORDER BY position').all(id) as { track_path: string }[]).map(row => row.track_path)
+  if (currentPaths.length !== orderedPaths.length || currentPaths.some(trackPath => !orderedPaths.includes(trackPath))) {
+    throw new Error('This playlist changed while you were editing it. Refresh the playlist and try again.')
+  }
+  const setPosition = db.prepare('UPDATE playlist_tracks SET position=? WHERE playlist_id=? AND track_path=?')
+  const tx = db.transaction(() => orderedPaths.forEach((trackPath, index) => setPosition.run(index, id, trackPath)))
+  tx()
+  return getPlaylistTracks(id)
+}
 export function getPlaylistTracks(id: number): Track[] {
   return (db.prepare(`SELECT t.*, a.key AS art_key FROM playlist_tracks pt JOIN tracks t ON t.path=pt.track_path LEFT JOIN artworks a ON t.artwork_key=a.key WHERE pt.playlist_id=? ORDER BY pt.position`).all(id) as any[]).map(r => ({
     path: r.path, title: r.title, artist: r.artist, album: r.album, trackNo: r.track_no, genre: r.genre,
@@ -335,7 +351,9 @@ export function exportBackupObject() {
     trackStats: db.prepare('SELECT * FROM track_stats').all(), playlistFolders: db.prepare('SELECT * FROM playlist_folders').all(), playlists: db.prepare('SELECT * FROM playlists').all(),
     playlistTracks: db.prepare('SELECT * FROM playlist_tracks').all(), smartPlaylists: db.prepare('SELECT * FROM smart_playlists').all(),
     bookmarks: db.prepare('SELECT * FROM bookmarks').all(), history: db.prepare('SELECT * FROM listening_history').all(),
-    lyrics: db.prepare('SELECT * FROM lyrics').all(), downloads: db.prepare('SELECT * FROM downloads').all()
+    lyrics: db.prepare('SELECT * FROM lyrics').all(), downloads: db.prepare('SELECT * FROM downloads').all(),
+    libraryRoots: db.prepare('SELECT * FROM library_roots').all(), playlistSources: db.prepare('SELECT * FROM playlist_sources').all(),
+    downloadJobs: db.prepare('SELECT * FROM download_jobs').all()
   }
 }
 export function restoreBackupObject(backup: any) {
@@ -372,6 +390,43 @@ export function restoreBackupObject(backup: any) {
     for (const row of Array.isArray(backup.history) ? backup.history : []) db.prepare('INSERT OR IGNORE INTO listening_history(id,track_path,title,artist,source,played_at) VALUES(?,?,?,?,?,?)').run(row.id,row.track_path,row.title,row.artist,row.source,row.played_at)
     for (const row of Array.isArray(backup.lyrics) ? backup.lyrics : []) if (isKnownTrack(row.track_path)) db.prepare('INSERT OR REPLACE INTO lyrics(track_path,content_json,updated_at) VALUES(?,?,?)').run(row.track_path,row.content_json,row.updated_at)
     for (const row of Array.isArray(backup.downloads) ? backup.downloads : []) db.prepare('INSERT OR IGNORE INTO downloads(id,title,file_path,source_url,format,created_at) VALUES(?,?,?,?,?,?)').run(row.id,row.title,row.file_path,row.source_url,row.format,row.created_at)
+    for (const row of Array.isArray(backup.libraryRoots) ? backup.libraryRoots : []) {
+      if (!row || typeof row !== 'object') continue
+      if (typeof row.path !== 'string' || !path.isAbsolute(row.path) || row.path.length > 32768) continue
+      db.prepare('INSERT OR IGNORE INTO library_roots(path,watched,last_scan) VALUES(?,?,?)')
+        .run(row.path, row.watched ? 1 : 0, row.last_scan == null ? null : (Number.isFinite(Number(row.last_scan)) ? Number(row.last_scan) : null))
+    }
+    for (const row of Array.isArray(backup.playlistSources) ? backup.playlistSources : []) {
+      if (!row || typeof row !== 'object') continue
+      if (typeof row.name !== 'string' || !row.name.trim() || row.name.length > 300 || typeof row.url !== 'string' || row.url.length > 4000) continue
+      if (!['mp3','flac','opus'].includes(row.format)) continue
+      let sourceUrl: URL
+      try { sourceUrl = new URL(row.url) } catch { continue }
+      const host = sourceUrl.hostname.toLowerCase().replace(/^www[.]/, '')
+      const supported = host === 'youtu.be' || host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'soundcloud.com' || host.endsWith('.soundcloud.com')
+      if (sourceUrl.protocol !== 'https:' || !supported) continue
+      db.prepare('INSERT OR IGNORE INTO playlist_sources(name,url,format,last_synced,created_at) VALUES(?,?,?,?,?)')
+        .run(row.name.trim(), sourceUrl.toString(), row.format, row.last_synced == null ? null : (Number.isFinite(Number(row.last_synced)) ? Number(row.last_synced) : null), Number.isFinite(Number(row.created_at)) ? Number(row.created_at) : Date.now())
+    }
+    const jobStatuses = new Set(['queued','downloading','paused','finished','error','cancelled'])
+    for (const row of Array.isArray(backup.downloadJobs) ? backup.downloadJobs : []) {
+      if (!row || typeof row !== 'object') continue
+      if (typeof row.id !== 'string' || !row.id || row.id.length > 300 || typeof row.url !== 'string' || row.url.length > 4000) continue
+      if (!['mp3','flac','opus'].includes(row.format) || !jobStatuses.has(row.status)) continue
+      let sourceUrl: URL
+      try { sourceUrl = new URL(row.url) } catch { continue }
+      if (!['http:','https:'].includes(sourceUrl.protocol)) continue
+      const interrupted = row.status === 'queued' || row.status === 'downloading'
+      const status = interrupted ? 'paused' : row.status
+      const error = interrupted ? 'Restored from backup. Retry to continue partial files where the source supports it.' : String(row.error || '').slice(0, 5000)
+      const percent = Math.max(0, Math.min(100, Number.isFinite(Number(row.progress)) ? Number(row.progress) : 0))
+      const completed = Math.max(0, Math.floor(Number.isFinite(Number(row.completed)) ? Number(row.completed) : 0))
+      const total = row.total == null || !Number.isFinite(Number(row.total)) ? null : Math.max(0, Math.floor(Number(row.total)))
+      const filePath = typeof row.file_path === 'string' && row.file_path.length <= 32768 ? row.file_path : null
+      db.prepare('INSERT OR IGNORE INTO download_jobs(id,url,format,status,title,progress,error,updated_at,completed,total,file_path,include_playlist) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(row.id, sourceUrl.toString(), row.format, status, String(row.title || '').slice(0, 1000), percent, error,
+          Number.isFinite(Number(row.updated_at)) ? Number(row.updated_at) : Date.now(), completed, total, filePath, row.include_playlist ? 1 : 0)
+    }
   })
   transaction()
   return true

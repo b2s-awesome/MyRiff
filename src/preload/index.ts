@@ -28,6 +28,7 @@ const api = {
   movePlaylistToFolder: (playlistId: number, folderId: number | null) => ipcRenderer.invoke('playlist:move-to-folder', playlistId, folderId) as Promise<Playlist[]>,
   addPlaylistTracks: (id: number, paths: string[]) => ipcRenderer.invoke('playlist:add', id, paths) as Promise<Track[]>,
   removePlaylistTrack: (id: number, trackPath: string) => ipcRenderer.invoke('playlist:remove', id, trackPath) as Promise<Track[]>,
+  reorderPlaylistTracks: (id: number, orderedPaths: string[]) => ipcRenderer.invoke('playlist:reorder', id, orderedPaths) as Promise<Track[]>,
   listPlaylistSources: () => ipcRenderer.invoke('playlist:source-list') as Promise<SavedPlaylistSource[]>,
   savePlaylistSource: (name: string, url: string, format: 'mp3'|'flac'|'opus') => ipcRenderer.invoke('playlist:source-save', name, url, format) as Promise<SavedPlaylistSource>,
   deletePlaylistSource: (id: number) => ipcRenderer.invoke('playlist:source-delete', id) as Promise<boolean>,
