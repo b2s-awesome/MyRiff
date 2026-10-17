@@ -435,18 +435,59 @@ export default function App() {
   useEffect(() => { if (audioRef.current) audioRef.current.loop = repeat === 'one' }, [repeat])
   useEffect(() => {
     const audio = audioRef.current
-    if (!audio) return
+    const mediaSession = navigator.mediaSession
+    if (!audio || !mediaSession) return
+    try {
+      mediaSession.metadata = current && typeof MediaMetadata !== 'undefined'
+        ? new MediaMetadata({
+            title: current.title || 'Unknown track',
+            artist: current.artist || 'Unknown artist',
+            album: current.album || '',
+            artwork: current.artworkUrl ? [{ src: current.artworkUrl, sizes: '512x512' }] : []
+          })
+        : null
+    } catch { /* media metadata artwork and fields differ by platform */ }
+    const setHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+      try { mediaSession.setActionHandler(action, handler) }
+      catch { /* action is unavailable on this platform */ }
+    }
+    setHandler('play', () => { if (audio.paused) void togglePlay() })
+    setHandler('pause', () => { if (!audio.paused) { audio.pause(); setPlaying(false) } })
+    setHandler('stop', () => { audio.pause(); audio.currentTime = 0; setPosition(0); setPlaying(false) })
+    setHandler('nexttrack', nextTrack)
+    setHandler('previoustrack', previousTrack)
+    setHandler('seekto', details => {
+      if (typeof details.seekTime !== 'number' || !Number.isFinite(details.seekTime)) return
+      const target = Math.max(0, Math.min(Number.isFinite(audio.duration) ? audio.duration : details.seekTime, details.seekTime))
+      audio.currentTime = target; setPosition(target)
+    })
+    setHandler('seekbackward', details => {
+      const target = Math.max(0, audio.currentTime - Math.max(1, details.seekOffset || 10))
+      audio.currentTime = target; setPosition(target)
+    })
+    setHandler('seekforward', details => {
+      const limit = Number.isFinite(audio.duration) ? audio.duration : audio.currentTime + 10
+      const target = Math.min(limit, audio.currentTime + Math.max(1, details.seekOffset || 10))
+      audio.currentTime = target; setPosition(target)
+    })
+    return () => {
+      for (const action of ['play','pause','stop','nexttrack','previoustrack','seekto','seekbackward','seekforward'] as MediaSessionAction[]) setHandler(action, null)
+    }
+  }, [current, togglePlay, nextTrack, previousTrack])
+
+  useEffect(() => {
     const mediaSession = navigator.mediaSession
     if (!mediaSession) return
+    mediaSession.playbackState = !current ? 'none' : playing ? 'playing' : 'paused'
+    if (!current || !Number.isFinite(duration) || duration <= 0) return
     try {
-      if (current) mediaSession.metadata = new MediaMetadata({ title: current.title, artist: current.artist, album: current.album, artwork: current.artworkUrl ? [{ src: current.artworkUrl }] : [] })
-      mediaSession.setActionHandler('play', () => togglePlay())
-      mediaSession.setActionHandler('pause', () => { audio.pause(); setPlaying(false) })
-      mediaSession.setActionHandler('nexttrack', nextTrack)
-      mediaSession.setActionHandler('previoustrack', previousTrack)
-      mediaSession.setActionHandler('seekto', e => { if (typeof e.seekTime === 'number') audio.currentTime = e.seekTime })
-    } catch { /* media actions are not implemented on every platform */ }
-  }, [current, togglePlay, nextTrack, previousTrack])
+      mediaSession.setPositionState({
+        duration,
+        playbackRate: 1,
+        position: Math.max(0, Math.min(duration, Number.isFinite(position) ? position : 0))
+      })
+    } catch { /* position state is optional and varies across Chromium/platform versions */ }
+  }, [current?.path, current?.streamUrl, playing, position, duration])
 
   useEffect(() => {
     const cleanup = window.myriff.onPlayerAction(action => {

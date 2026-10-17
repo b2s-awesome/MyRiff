@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Archive, AudioLines, Bookmark, Check, CheckCircle2, Clock3, Copy, FileSpreadsheet, Heart, ListMusic, LoaderCircle, Music2, Search, ShieldAlert, Sparkles, Star, Trash2, WandSparkles } from 'lucide-react'
 import type { AppSettings, DuplicateGroup, ListeningHistoryItem, MetadataSuggestion, SmartPlaylist, SmartPlaylistRule, Track, TrackBookmark } from '../../../shared/types'
 
@@ -20,6 +20,7 @@ export default function PowerToolsPage({ tracks, current, position, settings, on
   const [activeSmartId, setActiveSmartId] = useState<number|null>(null)
   const [metadataPath, setMetadataPath] = useState('')
   const [metadataResults, setMetadataResults] = useState<MetadataSuggestion[]>([])
+  const lastAutoLookupRef = useRef('')
   const [loudnessPath, setLoudnessPath] = useState('')
   const [bookmarkLabel, setBookmarkLabel] = useState('')
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set())
@@ -80,10 +81,11 @@ export default function PowerToolsPage({ tracks, current, position, settings, on
   }
   const removeMissing = async () => {
     if (!missing.length) return
+    if (settings.confirmDestructiveActions && !window.confirm(`Remove ${missing.length} missing file references from MyRiff? The original audio files will not be deleted.`)) return
     const count = await window.myriff.removeMissingTracks(missing); setMissing([]); await onRefresh(); await reload(); onNotify(`Removed ${count} missing file references. No audio files were deleted.`)
   }
   const removeIndexItem = async (path: string) => {
-    if (!confirm('Remove this track from MyRiff’s library index? The original audio file will remain untouched.')) return
+    if (settings.confirmDestructiveActions && !window.confirm('Remove this track from MyRiff’s library index? The original audio file will remain untouched.')) return
     await window.myriff.removeTracksFromIndex([path]); await onRefresh(); await reload(); setDuplicates(old=>old.map(g=>({...g,tracks:g.tracks.filter(t=>t.path!==path)})).filter(g=>g.tracks.length>1)); onNotify('Removed from the library index only.')
   }
   const createSmart = async () => {
@@ -104,13 +106,32 @@ export default function PowerToolsPage({ tracks, current, position, settings, on
   }
 
   const loadSmartTracks = async (id: number) => { setActiveSmartId(id); setSmartTracks(await window.myriff.getSmartPlaylistTracks(id)) }
-  const getMetadata = async () => {
+  const getMetadata = useCallback(async () => {
     if (!metadataPath) return
+    if (settings.metadataProvider === 'off') {
+      setMetadataResults([])
+      onNotify('Metadata lookup is disabled in Settings. Choose MusicBrainz to enable online suggestions.')
+      return
+    }
     setWorking('metadata'); setMetadataResults([])
-    try { const result = await window.myriff.searchMetadata(metadataPath); setMetadataResults(result); if (!result.length) onNotify('MusicBrainz did not return suggestions for this track.') }
-    catch(e) { onNotify(e instanceof Error ? e.message : 'Metadata lookup failed.') }
+    try {
+      const result = await window.myriff.searchMetadata(metadataPath)
+      setMetadataResults(result)
+      if (!result.length) onNotify('MusicBrainz did not return suggestions for this track.')
+    } catch(e) { onNotify(e instanceof Error ? e.message : 'Metadata lookup failed.') }
     finally { setWorking('') }
-  }
+  }, [metadataPath, settings.metadataProvider, onNotify])
+
+  useEffect(() => {
+    if (activeTab !== 'metadata' || !settings.autoEnrichMetadata || settings.metadataProvider !== 'musicbrainz' || !metadataPath) {
+      lastAutoLookupRef.current = ''
+      return
+    }
+    const key = `${metadataPath}|${settings.metadataProvider}`
+    if (lastAutoLookupRef.current === key) return
+    lastAutoLookupRef.current = key
+    void getMetadata()
+  }, [activeTab, metadataPath, settings.autoEnrichMetadata, settings.metadataProvider, getMetadata])
   const exportTaggedCopy = async (suggestion: MetadataSuggestion) => {
     if (!metadataPath) return
     try { const result = await window.myriff.exportMetadataCopy(metadataPath, suggestion); if (result) { await onRefresh(); onNotify('Metadata-enriched copy exported. The original file was not modified.') } }
@@ -147,7 +168,7 @@ export default function PowerToolsPage({ tracks, current, position, settings, on
   }
   const exportBackup = async () => { try { const result = await window.myriff.exportBackup(); if (result) onNotify(`Backup exported to ${result}`) } catch(e) { onNotify(e instanceof Error ? e.message : 'Backup export failed.') } }
   const importBackup = async () => {
-    if (!confirm('Restore a MyRiff backup? Matching local library data, settings and playlists will be merged. Existing tracks will not be deleted.')) return
+    if (settings.confirmDestructiveActions && !window.confirm('Restore a MyRiff backup? Matching local library data, settings and playlists will be merged. Existing tracks will not be deleted.')) return
     try { const result = await window.myriff.importBackup(); if (result) { await onRefresh(); await reload(); onNotify('Backup restored. Restart MyRiff if you imported settings that affect window behaviour.') } } catch(e) { onNotify(e instanceof Error ? e.message : 'Backup restore failed.') }
   }
 
@@ -173,7 +194,7 @@ export default function PowerToolsPage({ tracks, current, position, settings, on
       <section className="content-card"><div className="section-heading compact"><div><h2>Your smart playlists</h2><p>{smartPlaylists.length} saved rule sets</p></div></div>{smartPlaylists.length?<div className="smart-playlist-list">{smartPlaylists.map(p=><div className={`smart-playlist-row ${activeSmartId===p.id?'active':''}`} key={p.id}><button className="smart-playlist-select" onClick={()=>loadSmartTracks(p.id)}><ListMusic size={17}/><span><b>{p.name}</b><small>{p.rules.map(r=>`${r.field} ${r.operator} ${String(r.value)}`).join(` ${p.match.toUpperCase()} `)}</small></span><span>{activeSmartId===p.id?smartTracks.length:'View'}</span></button><button className="icon-button" title="Delete smart playlist" onClick={async()=>{if(confirm(`Delete smart playlist “${p.name}”?`)){await window.myriff.deleteSmartPlaylist(p.id);setSmartPlaylists(await window.myriff.listSmartPlaylists());if(activeSmartId===p.id){setActiveSmartId(null);setSmartTracks([])}}}}><Trash2 size={14}/></button></div>)}</div>:<div className="small-empty">No smart playlists yet.</div>}{activeSmartId!==null&&<div className="smart-preview"><h3>Matching tracks ({smartTracks.length})</h3>{smartTracks.slice(0,100).map(t=><button key={t.path} className="history-row" onDoubleClick={()=>onPlay(t,smartTracks)}><span><b>{t.title}</b><small>{t.artist} · ★ {t.rating||0} · played {t.playCount||0} times</small></span><span>{formatTime(t.duration)}</span></button>)}</div>}</section>
     </>}
     {activeTab==='metadata'&&<>
-      <section className="content-card"><div className="section-heading compact"><div><h2>Metadata match suggestions</h2><p>Look up a track in MusicBrainz. Review the result, then export a tagged copy; the original remains untouched.</p></div><Search size={19} color="var(--accent)"/></div><label className="field-label">Local track<select value={metadataPath} onChange={e=>{setMetadataPath(e.target.value);setMetadataResults([])}}>{tracks.map(t=><option key={t.path} value={t.path}>{t.artist?`${t.artist} — `:''}{t.title}</option>)}</select></label><button className="secondary-button" disabled={!metadataPath||working==='metadata'} onClick={getMetadata}>{working==='metadata'?<LoaderCircle size={15} className="spin"/>:<Search size={15}/>} Search MusicBrainz</button>{metadataResults.length>0&&<div className="metadata-suggestions">{metadataResults.map((m,i)=><div className="metadata-suggestion" key={`${m.musicBrainzRecordingId}-${i}`}>{m.artworkUrl?<img src={m.artworkUrl} alt="Suggested cover"/>:<div className="metadata-cover"><Music2 size={20}/></div>}<div className="metadata-copy"><b>{m.title}</b><span>{m.artist} · {m.album} {m.year?`· ${m.year}`:''}</span><small>Match confidence: {Math.round(m.confidence*100)}% · {m.provider}</small></div><button className="secondary-button" onClick={()=>exportTaggedCopy(m)}>Export tagged copy</button></div>)}</div>}</section>
+      <section className="content-card"><div className="section-heading compact"><div><h2>Metadata match suggestions</h2><p>Look up a track in MusicBrainz. Review the result, then export a tagged copy; the original remains untouched.</p></div><Search size={19} color="var(--accent)"/></div><label className="field-label">Local track<select value={metadataPath} onChange={e=>{setMetadataPath(e.target.value);setMetadataResults([])}}>{tracks.map(t=><option key={t.path} value={t.path}>{t.artist?`${t.artist} — `:''}{t.title}</option>)}</select></label><button className="secondary-button" disabled={!metadataPath||working==='metadata'||settings.metadataProvider==='off'} onClick={getMetadata}>{working==='metadata'?<LoaderCircle size={15} className="spin"/>:<Search size={15}/>} {settings.metadataProvider==='off'?'Metadata provider disabled':'Search MusicBrainz'}</button>{settings.autoEnrichMetadata&&settings.metadataProvider==='musicbrainz'&&<p className="footnote">Automatic suggestions are fetched when this tab opens or the selected track changes. You always review a match before exporting a tagged copy.</p>}{metadataResults.length>0&&<div className="metadata-suggestions">{metadataResults.map((m,i)=><div className="metadata-suggestion" key={`${m.musicBrainzRecordingId}-${i}`}>{m.artworkUrl?<img src={m.artworkUrl} alt="Suggested cover"/>:<div className="metadata-cover"><Music2 size={20}/></div>}<div className="metadata-copy"><b>{m.title}</b><span>{m.artist} · {m.album} {m.year?`· ${m.year}`:''}</span><small>Match confidence: {Math.round(m.confidence*100)}% · {m.provider}</small></div><button className="secondary-button" onClick={()=>exportTaggedCopy(m)}>Export tagged copy</button></div>)}</div>}</section>
       <section className="content-card"><div className="section-heading compact"><div><h2>ReplayGain / loudness analysis</h2><p>Measure integrated loudness and store a per-track gain suggestion. Analysis is non-destructive.</p></div><AudioLinesIcon/></div><label className="field-label">Track<select value={loudnessPath} onChange={e=>setLoudnessPath(e.target.value)}>{tracks.map(t=><option key={t.path} value={t.path}>{t.artist?`${t.artist} — `:''}{t.title}</option>)}</select></label><div className="health-actions"><button className="primary-button" disabled={!loudnessPath||working==='loudness'} onClick={analyseLoudness}>{working==='loudness'?<LoaderCircle size={15} className="spin"/>:<AudioLines size={15}/>} Analyse with FFmpeg</button><span className="muted">Target: {settings.loudnessTargetLufs} LUFS</span></div><p className="footnote">The measured gain is stored per track for future ReplayGain-aware playback; existing audio files are not changed.</p></section>
     </>}
     {activeTab==='bulk'&&<>

@@ -246,3 +246,52 @@ test('build workflow smoke-tests each OS and persists the lockfile after the ful
   assert.ok(workflow.includes('git push origin HEAD:main'))
   assert.ok(!workflow.includes(['name: dependency-lock', '          path: release-assets'].join('\n')))
 })
+
+
+test('metadata provider setting disables online lookup and optional auto-suggestions stay review-first', () => {
+  const ipc = read('src/main/ipc.ts')
+  const page = read('src/renderer/src/components/PowerToolsPage.tsx')
+  const settings = read('src/renderer/src/components/AdvancedSettings.tsx')
+  assert.match(ipc, /settings\.metadataProvider === 'off'/)
+  assert.match(page, /settings\.metadataProvider === 'off'/)
+  assert.match(page, /settings\.autoEnrichMetadata/)
+  assert.match(page, /activeTab !== 'metadata'/)
+  assert.match(page, /You always review a match before exporting a tagged copy/)
+  assert.match(settings, /Suggest metadata from MusicBrainz/)
+  assert.match(settings, /metadataProvider/)
+})
+
+test('startup-page customisation includes every navigation destination and survives IPC validation', () => {
+  const types = read('src/shared/types.ts')
+  const settings = read('src/renderer/src/components/AdvancedSettings.tsx')
+  const ipc = read('src/main/ipc.ts')
+  for (const page of ['library','playlists','search','downloads','playlist-studio','power-tools','radio','editor','lyrics','sound','settings']) {
+    assert.ok(types.includes("'" + page + "'"), `defaultPage type missing ${page}`)
+    assert.ok(settings.includes('value="' + page + '"'), `start-page option missing ${page}`)
+    assert.ok(ipc.includes("'" + page + "'"), `settings validation missing ${page}`)
+  }
+})
+
+test('confirm-destructive-actions preference gates destructive library cleanup and backup restore', () => {
+  const page = read('src/renderer/src/components/PowerToolsPage.tsx')
+  assert.ok(page.includes('settings.confirmDestructiveActions && !window.confirm(`Remove ${missing.length} missing file references'))
+  assert.ok(page.includes("settings.confirmDestructiveActions && !window.confirm('Remove this track from MyRiff"))
+  assert.ok(page.includes("settings.confirmDestructiveActions && !window.confirm('Restore a MyRiff backup"))
+})
+
+test('OS media-session controls expose track metadata, transport, seek actions and position state', () => {
+  const app = read('src/renderer/src/App.tsx')
+  assert.match(app, /navigator\.mediaSession/)
+  assert.match(app, /new MediaMetadata/)
+  assert.match(app, /setHandler\('nexttrack'/)
+  assert.match(app, /setHandler\('previoustrack'/)
+  assert.match(app, /setHandler\('seekbackward'/)
+  assert.match(app, /setHandler\('seekforward'/)
+  assert.match(app, /mediaSession\.playbackState =/)
+  assert.match(app, /mediaSession\.setPositionState/)
+})
+
+test('scheduled playlist sync only advances its last-synced time after success', () => {
+  const ipc = read('src/main/ipc.ts')
+  assert.match(ipc, /scheduledPlaylistSources\.delete\(source\.id\)[\s\S]{0,100}if \(progress\.status === 'finished'\) touchPlaylistSource\(source\.id\)/)
+})

@@ -41,7 +41,7 @@ function configurePlaylistScheduler(getWindow: () => BrowserWindow | null) {
           if (window && !window.isDestroyed()) window.webContents.send('download:progress', { ...progress, includePlaylist: true })
           if (['finished','error','cancelled','paused'].includes(progress.status)) {
             scheduledPlaylistSources.delete(source.id)
-            touchPlaylistSource(source.id)
+            if (progress.status === 'finished') touchPlaylistSource(source.id)
           }
         }, async (filePath, title, downloadId, sourceUrl, format) => {
           store.addDownload({ id: downloadId, title, filePath, sourceUrl, format })
@@ -306,6 +306,8 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     return { folder: outputFolder, successes, failures }
   })
   ipcMain.handle('metadata:search', (_e, trackPath: string) => {
+    const settings = store.getSettings()
+    if (settings.metadataProvider === 'off') throw new Error('Metadata lookup is disabled in Settings.')
     const track = store.getTrack(trackPath)
     if (!track) throw new Error('Track is not in the local library.')
     return searchMusicBrainz(track)
@@ -436,7 +438,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       if (key === 'visualizerStyle' && !['bars','wave','mirror','spectrum','dots'].includes(String(value))) continue
       if (key === 'viewMode' && !['grid','list'].includes(String(value))) continue
       if (key === 'groupBy' && !['folder','artist','album','genre'].includes(String(value))) continue
-      if (key === 'defaultPage' && !['library','playlists','search','downloads','playlist-studio'].includes(String(value))) continue
+      if (key === 'defaultPage' && !['library','playlists','search','downloads','playlist-studio','power-tools','radio','editor','lyrics','sound','settings'].includes(String(value))) continue
       if (key === 'accent' && !/^#[0-9a-f]{6}$/i.test(String(value))) continue
       if (key === 'cornerRadius' && (Number(value) < 0 || Number(value) > 28)) continue
       if (key === 'uiScale' && (Number(value) < 80 || Number(value) > 125)) continue
