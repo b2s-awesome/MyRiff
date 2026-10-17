@@ -45,7 +45,7 @@ export default function AdvancedSettings({ settings, onChange, audioOutputs, tra
     if (profileBy !== 'manual' && !value) { onNotify('Enter a match value for this audio profile.'); return }
     const profile: AudioProfile = {
       id: crypto.randomUUID(), name: profileName.trim() || `${profileBy === 'manual' ? 'Manual' : value} profile`,
-      matchBy: profileBy, matchValue: value, eqBands: [...settings.eqBands], tempo: settings.effectTempo,
+      matchBy: profileBy, matchValue: value, eqBands: [...settings.eqBands], eqQ: settings.eqQ, stereoWidth: settings.stereoWidth, tempo: settings.effectTempo,
       pitch: settings.effectPitch, reverb: settings.effectReverb, distortion: settings.effectDistortion, enabled: true
     }
     await onChange({ audioProfiles: [...settings.audioProfiles, profile] })
