@@ -50,6 +50,8 @@ jobs:
           path: .
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
       - name: Source sanity
         run: npm run lint:source
       - name: TypeScript syntax transpilation
@@ -112,6 +114,17 @@ jobs:
           fi
           echo "Packaged app exited before the smoke-test timeout (exit code $status)."
           exit 1
+      - name: Smoke-test packaged Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $appPath = Join-Path $PWD 'release\\win-unpacked\\MyRiff.exe'
+          if (-not (Test-Path $appPath)) { throw \"Packaged executable not found: $appPath\" }
+          $process = Start-Process -FilePath $appPath -ArgumentList @('--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage') -PassThru
+          Start-Sleep -Seconds 12
+          $process.Refresh()
+          if ($process.HasExited) { throw \"Packaged MyRiff exited during startup smoke test (exit code $($process.ExitCode)).\" }
+          Stop-Process -Id $process.Id -Force
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:
