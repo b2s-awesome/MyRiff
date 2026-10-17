@@ -112,7 +112,8 @@ export interface DownloadProgress {
 }
 
 export interface LyricsResult { synced: boolean; lines: LyricLine[]; provider: string; source?: string }
-export interface LyricLine { time: number | null; text: string }
+export interface LyricWord { time: number; text: string }
+export interface LyricLine { time: number | null; text: string; words?: LyricWord[] }
 
 export interface AudioProfile {
   id: string
