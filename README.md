@@ -22,6 +22,10 @@
 | OS integration | Partial | Media keys and tray controls; optional sleep inhibition and portable data mode. Discord Rich Presence needs a Discord application ID and working local Discord IPC; it uses the `myriff` large-image asset key rather than uploading local cover art. |
 | Privacy | Yes by design | No app accounts, telemetry or analytics are included. Customisation profiles can be exported/imported independently of full database backups. Online searches/lyrics/streaming naturally contact those external services. |
 
+## Build and release validation
+
+GitHub Actions runs dependency installation, source checks, regression tests, a full TypeScript typecheck and an Electron/Vite build. It packages Windows, macOS and Linux deliverables and is being hardened with startup smoke tests that verify each packaged app loads the renderer root and preload API. A generated dependency lockfile is committed only after the full main-branch matrix succeeds. See [BUILDING.md](BUILDING.md) and [BUILD-STATUS.md](BUILD-STATUS.md) for the current results. Startup checks do not replace audio-device or listening-quality tests.
+
 ## Requirements
 
 - Node.js LTS 22 or newer (the one-click Windows setup installs the current LTS)
