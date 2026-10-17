@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { AudioLines, Disc3, Play, Radio, Shuffle, Sparkles } from 'lucide-react'
-import type { Track } from '../../shared/types'
+import type { Track } from '../../../shared/types'
 
 type Mode = 'balanced' | 'artist' | 'genre' | 'album'
 export default function LocalRadio({ tracks, current, onPlay }: { tracks: Track[]; current: Track | null; onPlay: (track: Track, context: Track[]) => void }) {

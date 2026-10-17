@@ -1,5 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import path from 'node:path'
 import fsSync from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -75,22 +77,142 @@ export async function searchStreams(query: string, source: StreamSource, setting
 let streamServer: Server | null = null
 let streamPort = 0
 const liveChildren = new Set<ChildProcess>()
+const liveStreamRequests = new Set<AbortController>()
+
+function resolveDirectMediaUrl(settings: AppSettings, pageUrl: string, signal: AbortSignal): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(new Error('Streaming request was cancelled.')); return }
+    let child: ChildProcess
+    try {
+      child = spawn(bin(settings), [...jsRuntimeArgs(), '--no-warnings', '--no-playlist', '--no-call-home', '-f', 'bestaudio', '--get-url', pageUrl], {
+        windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe']
+      })
+    } catch (error) {
+      reject(new Error('Could not start yt-dlp: ' + (error instanceof Error ? error.message : String(error))))
+      return
+    }
+    liveChildren.add(child)
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    const cleanup = () => signal.removeEventListener('abort', onAbort)
+    const finish = (error?: Error, directUrl?: string) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      if (error) reject(error)
+      else if (directUrl) resolve(directUrl)
+      else reject(new Error('yt-dlp did not return a direct media URL.'))
+    }
+    const onAbort = () => {
+      if (!child.killed) child.kill('SIGTERM')
+      finish(new Error('Streaming request was cancelled.'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    child.stdout?.on('data', chunk => {
+      stdout = (stdout + chunk.toString()).slice(-2000000)
+    })
+    child.stderr?.on('data', chunk => {
+      stderr = (stderr + chunk.toString()).slice(-6000)
+    })
+    child.on('error', error => {
+      liveChildren.delete(child)
+      finish(new Error('Could not resolve the media URL with yt-dlp: ' + error.message))
+    })
+    child.on('close', code => {
+      liveChildren.delete(child)
+      if (settled) return
+      if (signal.aborted) { finish(new Error('Streaming request was cancelled.')); return }
+      if (code !== 0) {
+        finish(new Error(stderr.trim() || ('yt-dlp exited with code ' + code + ' while resolving the media URL.')))
+        return
+      }
+      const candidate = stdout.trim().split(/\r?\n/).map(value => value.trim()).find(Boolean)
+      if (!candidate) { finish(new Error('yt-dlp returned an empty media URL.')); return }
+      try {
+        const parsed = new URL(candidate)
+        if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('The source returned an unsupported media URL protocol.')
+        finish(undefined, parsed.toString())
+      } catch (error) {
+        finish(error instanceof Error ? error : new Error('yt-dlp returned an invalid media URL.'))
+      }
+    })
+  })
+}
+
+function fallbackStreamMimeType(mediaUrl: string) {
+  try {
+    const parsed = new URL(mediaUrl)
+    const declared = parsed.searchParams.get('mime') || parsed.searchParams.get('mime_type')
+    if (declared && /^(audio\/|application\/octet-stream)/i.test(declared)) return declared
+    const extension = path.extname(parsed.pathname).toLowerCase()
+    const types: Record<string, string> = {
+      '.m4a': 'audio/mp4', '.mp4': 'audio/mp4', '.webm': 'audio/webm',
+      '.opus': 'audio/ogg', '.ogg': 'audio/ogg', '.mp3': 'audio/mpeg',
+      '.aac': 'audio/aac', '.wav': 'audio/wav', '.flac': 'audio/flac'
+    }
+    return types[extension] || 'application/octet-stream'
+  } catch { return 'application/octet-stream' }
+}
+
 export async function startStreamServer(settingsGetter: () => AppSettings) {
   if (streamServer && streamPort) return streamPort
   streamServer = createServer((req, res) => {
-    const u = new URL(req.url || '/', 'http://127.0.0.1')
-    if (u.pathname !== '/stream' || req.method !== 'GET') { res.writeHead(404).end(); return }
-    let url: string
-    try { url = validateUrl(u.searchParams.get('url') || '') } catch { res.writeHead(400).end('Invalid stream URL'); return }
-    const settings = settingsGetter()
-    const child = spawn(bin(settings), [...jsRuntimeArgs(), '--no-warnings', '--no-playlist', '-f', 'bestaudio[ext=m4a]/bestaudio', '-o', '-', url], { windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe'] })
-    liveChildren.add(child)
-    let began = false
-    child.stdout.on('data', chunk => { if (!began) { began = true; res.writeHead(200, { 'Content-Type': 'audio/webm', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store', 'Accept-Ranges': 'none' }) } res.write(chunk) })
-    child.stderr.on('data', () => { /* diagnostics stay out of the media response */ })
-    child.on('error', () => { if (!began && !res.headersSent) res.writeHead(502).end('Could not start yt-dlp. Check its path in Settings.'); else res.end() })
-    child.on('close', code => { liveChildren.delete(child); if (!res.writableEnded) { if (!began) res.writeHead(code === 0 ? 204 : 502); res.end() } })
-    req.on('close', () => { if (!child.killed) child.kill('SIGTERM') })
+    if (req.method !== 'GET') { res.writeHead(405, { Allow: 'GET' }).end('Only GET is supported.'); return }
+    const requestUrl = new URL(req.url || '/', 'http://127.0.0.1')
+    if (requestUrl.pathname !== '/stream') { res.writeHead(404).end(); return }
+    let pageUrl: string
+    try { pageUrl = validateUrl(requestUrl.searchParams.get('url') || '') }
+    catch { res.writeHead(400).end('Invalid stream URL'); return }
+
+    const controller = new AbortController()
+    liveStreamRequests.add(controller)
+    res.on('close', () => {
+      if (!res.writableEnded) controller.abort()
+      liveStreamRequests.delete(controller)
+    })
+
+    void (async () => {
+      try {
+        const directUrl = await resolveDirectMediaUrl(settingsGetter(), pageUrl, controller.signal)
+        if (controller.signal.aborted || res.destroyed) return
+        const requestHeaders: Record<string, string> = {}
+        const range = req.headers.range
+        // Forward one valid byte range so media elements can seek when the source supports it.
+        if (typeof range === 'string' && /^bytes=(?:\d+-\d*|-\d+)$/.test(range)) requestHeaders.Range = range
+        const upstream = await fetch(directUrl, { headers: requestHeaders, signal: controller.signal, redirect: 'follow' })
+        if (controller.signal.aborted || res.destroyed) return
+        if (!upstream.ok && upstream.status !== 416) {
+          const status = upstream.status === 404 ? 404 : 502
+          res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' })
+          res.end('The streaming source returned HTTP ' + upstream.status + '.')
+          return
+        }
+
+        const headers: Record<string, string> = {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range',
+          'Cache-Control': 'no-store'
+        }
+        headers['Content-Type'] = upstream.headers.get('content-type') || fallbackStreamMimeType(directUrl)
+        for (const name of ['content-length', 'content-range', 'accept-ranges', 'last-modified', 'etag']) {
+          const value = upstream.headers.get(name)
+          if (value) headers[name.split('-').map((part, index) => index ? part[0].toUpperCase() + part.slice(1) : part).join('-')] = value
+        }
+        res.writeHead(upstream.status, headers)
+        if (!upstream.body) { res.end(); return }
+        await pipeline(Readable.fromWeb(upstream.body as unknown as import('node:stream/web').ReadableStream), res)
+      } catch (error) {
+        if (controller.signal.aborted || res.destroyed) return
+        console.warn('MyRiff remote stream failed:', error instanceof Error ? error.message : error)
+        if (!res.headersSent) {
+          res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' })
+          res.end('Could not stream this source. Check yt-dlp and source availability in Settings.')
+        } else if (!res.destroyed) res.destroy()
+      } finally {
+        liveStreamRequests.delete(controller)
+      }
+    })()
   })
   await new Promise<void>((resolve, reject) => {
     streamServer!.once('error', reject)
@@ -98,11 +220,14 @@ export async function startStreamServer(settingsGetter: () => AppSettings) {
   })
   return streamPort
 }
+
 export function streamUrl(url: string) {
   if (!streamPort) throw new Error('Streaming service is not ready yet.')
   return `http://127.0.0.1:${streamPort}/stream?url=${encodeURIComponent(validateUrl(url))}`
 }
 export function stopStreamServer() {
+  for (const controller of liveStreamRequests) controller.abort()
+  liveStreamRequests.clear()
   for (const child of liveChildren) child.kill('SIGTERM')
   liveChildren.clear(); streamServer?.close(); streamServer = null; streamPort = 0
 }

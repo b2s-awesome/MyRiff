@@ -77,12 +77,12 @@ const api = {
   exportDiagnosticReport: () => ipcRenderer.invoke('diagnostics:export') as Promise<string|false>,
   updateDiscord: (track: { title: string; artist: string; album?: string; duration?: number; position?: number; artworkUrl?: string | null } | null) => ipcRenderer.invoke('discord:update', track),
   setMiniPlayer: (enabled: boolean) => ipcRenderer.invoke('window:mini', enabled),
-  onScanProgress: (callback: (p: { done: number; total: number; current: string }) => void) => { const f = (_: unknown, p: any) => callback(p); ipcRenderer.on('library:scan-progress', f); return () => ipcRenderer.removeListener('library:scan-progress', f) },
-  onDownloadProgress: (callback: (p: DownloadProgress) => void) => { const f = (_: unknown, p: DownloadProgress) => callback(p); ipcRenderer.on('download:progress', f); return () => ipcRenderer.removeListener('download:progress', f) },
-  onLibraryUpdated: (callback: (tracks: Track[]) => void) => { const f = (_: unknown, tracks: Track[]) => callback(tracks); ipcRenderer.on('library:updated', f); return () => ipcRenderer.removeListener('library:updated', f) },
-  onEditorProgress: (callback: (percent: number) => void) => { const f = (_: unknown, p: number) => callback(p); ipcRenderer.on('editor:progress', f); return () => ipcRenderer.removeListener('editor:progress', f) },
-  onPlayerAction: (callback: (action: string) => void) => { const f = (_: unknown, action: string) => callback(action); ipcRenderer.on('player:action', f); return () => ipcRenderer.removeListener('player:action', f) },
-  onMiniPlayerState: (callback: (enabled: boolean) => void) => { const f = (_: unknown, enabled: boolean) => callback(enabled); ipcRenderer.on('window:mini-state', f); return () => ipcRenderer.removeListener('window:mini-state', f) }
+  onScanProgress: (callback: (p: { done: number; total: number; current: string }) => void) => { const f = (_: unknown, p: any) => callback(p); ipcRenderer.on('library:scan-progress', f); return () => { ipcRenderer.removeListener('library:scan-progress', f) } },
+  onDownloadProgress: (callback: (p: DownloadProgress) => void) => { const f = (_: unknown, p: DownloadProgress) => callback(p); ipcRenderer.on('download:progress', f); return () => { ipcRenderer.removeListener('download:progress', f) } },
+  onLibraryUpdated: (callback: (tracks: Track[]) => void) => { const f = (_: unknown, tracks: Track[]) => callback(tracks); ipcRenderer.on('library:updated', f); return () => { ipcRenderer.removeListener('library:updated', f) } },
+  onEditorProgress: (callback: (percent: number) => void) => { const f = (_: unknown, p: number) => callback(p); ipcRenderer.on('editor:progress', f); return () => { ipcRenderer.removeListener('editor:progress', f) } },
+  onPlayerAction: (callback: (action: string) => void) => { const f = (_: unknown, action: string) => callback(action); ipcRenderer.on('player:action', f); return () => { ipcRenderer.removeListener('player:action', f) } },
+  onMiniPlayerState: (callback: (enabled: boolean) => void) => { const f = (_: unknown, enabled: boolean) => callback(enabled); ipcRenderer.on('window:mini-state', f); return () => { ipcRenderer.removeListener('window:mini-state', f) } }
 }
 contextBridge.exposeInMainWorld('myriff', api)
 export type MyRiffApi = typeof api

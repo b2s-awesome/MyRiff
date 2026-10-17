@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeftRight, CheckCircle2, Download, ExternalLink, FileAudio, FolderOpen, Link2, ListMusic, LoaderCircle, Upload, RefreshCw, Trash2, BookmarkPlus, Pause } from 'lucide-react'
-import type { AppSettings, DownloadProgress, Playlist, RemotePlaylistPreview, SavedPlaylistSource } from '../../shared/types'
+import type { AppSettings, DownloadProgress, Playlist, RemotePlaylistPreview, SavedPlaylistSource } from '../../../shared/types'
 
 export default function PlaylistStudio({ settings, onSettings, playlists, onImported, onNotify }: {
   settings: AppSettings; onSettings: (patch: Partial<AppSettings>) => Promise<void>; playlists: Playlist[]; onImported: (id: number) => Promise<void>; onNotify: (message: string) => void

@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog, shell, BrowserWindow, powerSaveBlocker } from 'electron'
+import { app, ipcMain, dialog, shell, BrowserWindow, powerSaveBlocker, type OpenDialogOptions, type SaveDialogOptions } from 'electron'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
@@ -60,7 +60,8 @@ function refreshPowerBlocker(settings: AppSettings, playing: boolean) {
   if ((!settings.inhibitSleep || !playing) && blockerId !== null) { powerSaveBlocker.stop(blockerId); blockerId = null }
 }
 export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boolean) => void, getStreamPort: () => number) {
-  const parent = () => win() ?? undefined
+  const showOpenDialog = (options: OpenDialogOptions) => { const window = win(); return window ? dialog.showOpenDialog(window, options) : dialog.showOpenDialog(options) }
+  const showSaveDialog = (options: SaveDialogOptions) => { const window = win(); return window ? dialog.showSaveDialog(window, options) : dialog.showSaveDialog(options) }
   configurePlaylistScheduler(win)
   const configureWatcher = async (settings: AppSettings) => {
     if (settings.autoWatchFolders && settings.musicFolder && stopLibraryWatch && watcherRoot === settings.musicFolder) return
@@ -80,23 +81,23 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     } catch (error) { console.warn('Could not watch the selected music folder:', error) }
   }
   ipcMain.handle('dialog:download-folder', async () => {
-    const r = await dialog.showOpenDialog(parent(), { title: 'Choose download destination', properties: ['openDirectory', 'createDirectory'] })
+    const r = await showOpenDialog({ title: 'Choose download destination', properties: ['openDirectory', 'createDirectory'] })
     return r.canceled ? null : r.filePaths[0]
   })
   ipcMain.handle('dialog:music-folder', async () => {
-    const r = await dialog.showOpenDialog(parent(), { title: 'Choose your music folder', properties: ['openDirectory'] })
+    const r = await showOpenDialog({ title: 'Choose your music folder', properties: ['openDirectory'] })
     return r.canceled ? null : r.filePaths[0]
   })
   ipcMain.handle('dialog:save-audio', async (_e, suggested: string) => {
-    const r = await dialog.showSaveDialog(parent(), { title: 'Export audio', defaultPath: suggested, filters: [{ name: 'Audio files', extensions: ['mp3','flac','opus','wav','m4a'] }] })
+    const r = await showSaveDialog({ title: 'Export audio', defaultPath: suggested, filters: [{ name: 'Audio files', extensions: ['mp3','flac','opus','wav','m4a'] }] })
     return r.canceled ? null : r.filePath
   })
   ipcMain.handle('dialog:banner', async () => {
-    const r = await dialog.showOpenDialog(parent(), { title: 'Choose profile banner', properties: ['openFile'], filters: [{ name: 'Images', extensions: ['png','jpg','jpeg','webp'] }] })
+    const r = await showOpenDialog({ title: 'Choose profile banner', properties: ['openFile'], filters: [{ name: 'Images', extensions: ['png','jpg','jpeg','webp'] }] })
     return r.canceled ? null : r.filePaths[0]
   })
   ipcMain.handle('dialog:executable', async (_e, title: string) => {
-    const r = await dialog.showOpenDialog(parent(), { title, properties: ['openFile'] })
+    const r = await showOpenDialog({ title, properties: ['openFile'] })
     return r.canceled ? null : r.filePaths[0]
   })
   ipcMain.handle('tools:diagnostics', async () => {
@@ -130,7 +131,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     })
     const tools = await Promise.all([probe('Node.js',process.execPath,['--version']),probe('yt-dlp',settings.ytDlpPath.trim()||'yt-dlp',['--version']),probe('FFmpeg',settings.ffmpegPath.trim()||'ffmpeg',['-version']),probe('Deno',settings.denoPath.trim()||'deno',['--version'])])
     const report = { generatedAt:new Date().toISOString(), version:app.getVersion(), platform:process.platform, architecture:process.arch, userDataPath:app.getPath('userData'), settings: { theme:settings.theme, musicFolder:settings.musicFolder, downloadFolder:settings.downloadFolder, autoWatchFolders:settings.autoWatchFolders }, tools }
-    const result = await dialog.showSaveDialog(parent(), { title:'Export MyRiff diagnostics', defaultPath:'MyRiff-Diagnostics.json', filters:[{name:'JSON report',extensions:['json']}] })
+    const result = await showSaveDialog({ title:'Export MyRiff diagnostics', defaultPath:'MyRiff-Diagnostics.json', filters:[{name:'JSON report',extensions:['json']}] })
     if (result.canceled || !result.filePath) return false
     await fs.writeFile(result.filePath, JSON.stringify(report,null,2), 'utf8'); return result.filePath
   })
@@ -233,7 +234,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
   })
   ipcMain.handle('editor:export', async (event, request: EditorRequest) => exportEditedAudio(request, store.getSettings(), percent => event.sender.send('editor:progress', percent)))
   ipcMain.handle('lyrics:search', async (_e, title: string, artist: string, album: string, duration: number) => fetchLyrics(title, artist, album, duration))
-  ipcMain.handle('lyrics:import', async () => chooseAndParseLrc(parent()))
+  ipcMain.handle('lyrics:import', async () => chooseAndParseLrc(win()))
   ipcMain.handle('lyrics:get', (_e, trackPath: string) => store.getLyrics(trackPath))
   ipcMain.handle('lyrics:save', (_e, trackPath: string, lines: unknown[]) => store.saveLyrics(trackPath, lines))
   ipcMain.handle('discord:update', async (_e, track) => {
@@ -264,7 +265,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     if (!track) throw new Error('Track is not in the local library.')
     const ext = extname(track.path) || '.mp3'
     const defaultPath = `${basename(track.path, ext)} - tagged${ext}`
-    const result = await dialog.showSaveDialog(parent(), { title: 'Export metadata-enriched copy', defaultPath, filters: [{ name: 'Audio file', extensions: [ext.replace(/^\./, '')] }] })
+    const result = await showSaveDialog({ title: 'Export metadata-enriched copy', defaultPath, filters: [{ name: 'Audio file', extensions: [ext.replace(/^\./, '')] }] })
     if (result.canceled || !result.filePath) return false
     await exportMetadataTaggedCopy(track.path, result.filePath, suggestion, store.getSettings())
     return result.filePath
@@ -274,7 +275,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     overrides = overrides && typeof overrides === 'object' ? overrides : {}
     for (const value of [overrides.artist, overrides.album, overrides.titleTemplate]) if (value !== undefined && (typeof value !== 'string' || value.length > 300)) throw new Error('Tag fields must be text shorter than 300 characters.')
     if (overrides.year !== undefined && overrides.year !== null && (!Number.isInteger(overrides.year) || overrides.year < 1880 || overrides.year > 2100)) throw new Error('Enter a valid release year between 1880 and 2100.')
-    const folderDialog = await dialog.showOpenDialog(parent(), { title: 'Choose destination for tagged copies', properties: ['openDirectory', 'createDirectory'] })
+    const folderDialog = await showOpenDialog({ title: 'Choose destination for tagged copies', properties: ['openDirectory', 'createDirectory'] })
     if (folderDialog.canceled || !folderDialog.filePaths[0]) return null
     const outputFolder = folderDialog.filePaths[0]
     const settings = store.getSettings()
@@ -319,7 +320,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
   ipcMain.handle('playlist:export-file', async (_e, id: number, format: 'm3u'|'csv'|'txt') => {
     const { playlist, tracks } = store.exportPlaylistEntries(id)
     const filters = format === 'm3u' ? [{ name: 'M3U playlist', extensions: ['m3u8','m3u'] }] : format === 'csv' ? [{ name: 'CSV playlist', extensions: ['csv'] }] : [{ name: 'Text list', extensions: ['txt'] }]
-    const result = await dialog.showSaveDialog(parent(), { title: 'Export playlist', defaultPath: `${playlist.name}.${format === 'm3u' ? 'm3u8' : format}`, filters })
+    const result = await showSaveDialog({ title: 'Export playlist', defaultPath: `${playlist.name}.${format === 'm3u' ? 'm3u8' : format}`, filters })
     if (result.canceled || !result.filePath) return false
     const q = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`
     let content = ''
@@ -329,7 +330,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     await fs.writeFile(result.filePath, content, 'utf8'); return result.filePath
   })
   ipcMain.handle('playlist:import-file', async () => {
-    const result = await dialog.showOpenDialog(parent(), { title: 'Import playlist or track list', properties: ['openFile'], filters: [{ name: 'Playlist files', extensions: ['m3u','m3u8','csv','txt'] }] })
+    const result = await showOpenDialog({ title: 'Import playlist or track list', properties: ['openFile'], filters: [{ name: 'Playlist files', extensions: ['m3u','m3u8','csv','txt'] }] })
     if (result.canceled || !result.filePaths[0]) return null
     const filePath = result.filePaths[0]; const raw = await fs.readFile(filePath, 'utf8'); const ext = extname(filePath).toLowerCase(); const tracks = store.listTracks()
     const normalize = (v: string) => v.toLowerCase().normalize('NFKD').replace(/\p{Diacritic}/gu, '').replace(/\[[^\]]*\]|\([^)]*\)/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim()
@@ -374,12 +375,12 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
   })
   ipcMain.handle('external:open-tunemymusic', async () => { await shell.openExternal('https://www.tunemymusic.com/'); return true })
   ipcMain.handle('backup:export', async () => {
-    const result = await dialog.showSaveDialog(parent(), { title: 'Export MyRiff backup', defaultPath: `MyRiff-Backup-${new Date().toISOString().slice(0,10)}.json`, filters: [{ name: 'MyRiff backup', extensions: ['json'] }] })
+    const result = await showSaveDialog({ title: 'Export MyRiff backup', defaultPath: `MyRiff-Backup-${new Date().toISOString().slice(0,10)}.json`, filters: [{ name: 'MyRiff backup', extensions: ['json'] }] })
     if (result.canceled || !result.filePath) return false
     await fs.writeFile(result.filePath, JSON.stringify(exportBackupObject(), null, 2), 'utf8'); return result.filePath
   })
   ipcMain.handle('backup:import', async () => {
-    const result = await dialog.showOpenDialog(parent(), { title: 'Restore MyRiff backup', properties: ['openFile'], filters: [{ name: 'MyRiff backup', extensions: ['json'] }] })
+    const result = await showOpenDialog({ title: 'Restore MyRiff backup', properties: ['openFile'], filters: [{ name: 'MyRiff backup', extensions: ['json'] }] })
     if (result.canceled || !result.filePaths[0]) return false
     const text = await fs.readFile(result.filePaths[0], 'utf8'); restoreBackupObject(JSON.parse(text)); return true
   })
@@ -395,13 +396,13 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     const values: Record<string, unknown> = {}
     for (const key of profileKeys) values[key] = settings[key]
     const payload = { format: 'myriff-settings-profile', version: 1, exportedAt: new Date().toISOString(), settings: values }
-    const result = await dialog.showSaveDialog(parent(), { title: 'Export customisation profile', defaultPath: 'MyRiff-Profile.json', filters: [{ name: 'MyRiff settings profile', extensions: ['json'] }] })
+    const result = await showSaveDialog({ title: 'Export customisation profile', defaultPath: 'MyRiff-Profile.json', filters: [{ name: 'MyRiff settings profile', extensions: ['json'] }] })
     if (result.canceled || !result.filePath) return false
     await fs.writeFile(result.filePath, JSON.stringify(payload, null, 2), 'utf8')
     return result.filePath
   })
   ipcMain.handle('settings-profile:import', async () => {
-    const result = await dialog.showOpenDialog(parent(), { title: 'Import customisation profile', properties: ['openFile'], filters: [{ name: 'MyRiff settings profile', extensions: ['json'] }] })
+    const result = await showOpenDialog({ title: 'Import customisation profile', properties: ['openFile'], filters: [{ name: 'MyRiff settings profile', extensions: ['json'] }] })
     if (result.canceled || !result.filePaths[0]) return false
     const profileStat = await fs.stat(result.filePaths[0])
     if (profileStat.size > 1_000_000) throw new Error('Settings profile is larger than the 1 MB safety limit.')
@@ -460,7 +461,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     return store.setSettings(patch as Partial<AppSettings>)
   })
   ipcMain.handle('library:export-csv', async () => {
-    const result = await dialog.showSaveDialog(parent(), { title: 'Export library inventory', defaultPath: 'MyRiff-Library.csv', filters: [{ name: 'CSV', extensions: ['csv'] }] })
+    const result = await showSaveDialog({ title: 'Export library inventory', defaultPath: 'MyRiff-Library.csv', filters: [{ name: 'CSV', extensions: ['csv'] }] })
     if (result.canceled || !result.filePath) return false
     const q = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`
     const rows = store.listTracks()
