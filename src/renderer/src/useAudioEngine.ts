@@ -22,6 +22,9 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
   const wetRef = useRef<GainNode | null>(null)
   const reverbMixRef = useRef<GainNode | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
+  const widthSplitterRef = useRef<ChannelSplitterNode | null>(null)
+  const widthMergerRef = useRef<ChannelMergerNode | null>(null)
+  const widthGainsRef = useRef<GainNode[]>([])
 
   const rebuildGraph = useCallback(() => {
     const ctx = contextRef.current; const input = inputRef.current; const analyser = analyserRef.current
@@ -31,6 +34,8 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
       for (const node of filtersRef.current) node.disconnect()
       distortionRef.current?.disconnect(); dryRef.current?.disconnect(); wetRef.current?.disconnect()
       convolverRef.current?.disconnect(); reverbMixRef.current?.disconnect(); analyser.disconnect()
+      widthSplitterRef.current?.disconnect(); widthMergerRef.current?.disconnect()
+      for (const node of widthGainsRef.current) node.disconnect()
       let current: AudioNode = input
       const uniqueChain: EffectName[] = (settings?.effectChain?.length ? settings.effectChain : (['eq', 'distortion', 'reverb'] as EffectName[])).filter((name, i, all) => all.indexOf(name) === i)
       for (const effect of uniqueChain) {
@@ -49,9 +54,22 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
           current = reverbMixRef.current
         }
       }
+      const width = settings?.effectsBypass ? 1 : Math.max(0, Math.min(2, settings?.stereoWidth ?? 1))
+      const splitter = widthSplitterRef.current; const merger = widthMergerRef.current; const widthGains = widthGainsRef.current
+      if (splitter && merger && widthGains.length === 4 && Math.abs(width - 1) > 0.001) {
+        const mid = (1 + width) / 2; const side = (1 - width) / 2
+        widthGains[0].gain.value = mid; widthGains[1].gain.value = side
+        widthGains[2].gain.value = side; widthGains[3].gain.value = mid
+        current.connect(splitter)
+        splitter.connect(widthGains[0], 0); widthGains[0].connect(merger, 0, 0)
+        splitter.connect(widthGains[1], 1); widthGains[1].connect(merger, 0, 0)
+        splitter.connect(widthGains[2], 0); widthGains[2].connect(merger, 0, 1)
+        splitter.connect(widthGains[3], 1); widthGains[3].connect(merger, 0, 1)
+        current = merger
+      }
       current.connect(analyser); analyser.connect(ctx.destination)
     } catch (error) { console.warn('MyRiff audio graph rebuild failed:', error) }
-  }, [settings?.effectChain])
+  }, [settings?.effectChain, settings?.stereoWidth, settings?.effectsBypass])
 
   const ensureGraph = useCallback(async () => {
     const audio = audioRef.current
@@ -96,7 +114,7 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
       nextFadeGain.connect(input)
       const filters: BiquadFilterNode[] = []
       FREQUENCIES.forEach(frequency => {
-        const filter = ctx.createBiquadFilter(); filter.type = 'peaking'; filter.frequency.value = frequency; filter.Q.value = 1.1; filter.gain.value = 0
+        const filter = ctx.createBiquadFilter(); filter.type = 'peaking'; filter.frequency.value = frequency; filter.Q.value = Math.max(0.3, Math.min(8, settings?.eqQ ?? 1.1)); filter.gain.value = 0
         filters.push(filter)
       })
       const distortion = ctx.createWaveShaper(); distortion.oversample = '4x'
@@ -109,10 +127,13 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
       }
       convolver.buffer = impulse
       const analyser = ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = .82
+      const widthSplitter = ctx.createChannelSplitter(2); const widthMerger = ctx.createChannelMerger(2)
+      const widthGains = [ctx.createGain(), ctx.createGain(), ctx.createGain(), ctx.createGain()]
       sourceRef.current = source; soundTouchRef.current = soundTouch
       nextSourceRef.current = nextSource; nextSoundTouchRef.current = nextSoundTouch
       primaryFadeGainRef.current = primaryFadeGain; nextFadeGainRef.current = nextFadeGain
       inputRef.current = input; filtersRef.current = filters; distortionRef.current = distortion
+      widthSplitterRef.current = widthSplitter; widthMergerRef.current = widthMerger; widthGainsRef.current = widthGains
       dryRef.current = dry; wetRef.current = wet; reverbMixRef.current = reverbMix; convolverRef.current = convolver; analyserRef.current = analyser
       contextRef.current = ctx
       const setSinkId = (ctx as AudioContext & { setSinkId?: (id: string) => Promise<void> }).setSinkId
@@ -124,7 +145,7 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
     if (contextRef.current.state === 'suspended') await contextRef.current.resume()
   }, [audioRef, rebuildGraph, settings?.audioOutputDeviceId])
 
-  useEffect(() => { if (contextRef.current) rebuildGraph() }, [settings?.effectChain, rebuildGraph])
+  useEffect(() => { if (contextRef.current) rebuildGraph() }, [settings?.effectChain, settings?.stereoWidth, settings?.effectsBypass, rebuildGraph])
 
   const resetCrossfade = useCallback(() => {
     const ctx = contextRef.current; const primary = primaryFadeGainRef.current?.gain; const secondary = nextFadeGainRef.current?.gain
@@ -158,6 +179,8 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
     if (!settings) return
     const now = contextRef.current?.currentTime ?? 0
     const bypass = settings.effectsBypass
+    const eqQ = Math.max(0.3, Math.min(8, settings.eqQ ?? 1.1))
+    filtersRef.current.forEach(filter => filter.Q.setTargetAtTime(eqQ, now, .025))
     settings.eqBands.forEach((gain, index) => {
       if (filtersRef.current[index]) filtersRef.current[index].gain.setTargetAtTime(bypass ? 0 : Math.max(-18, Math.min(18, gain)), now, .025)
     })
@@ -203,6 +226,7 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
     soundTouchRef.current?.disconnect(); nextSoundTouchRef.current?.disconnect()
     sourceRef.current?.disconnect(); nextSourceRef.current?.disconnect()
     primaryFadeGainRef.current?.disconnect(); nextFadeGainRef.current?.disconnect()
+    widthSplitterRef.current?.disconnect(); widthMergerRef.current?.disconnect(); widthGainsRef.current.forEach(node => node.disconnect())
     contextRef.current?.close().catch(() => undefined)
   }, [])
   return { ensureGraph, context: contextRef, analyser: analyserRef, crossfadeToNext, handoffToMain, resetCrossfade }

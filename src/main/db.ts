@@ -8,7 +8,7 @@ const defaults: AppSettings = {
   downloadFolder: '', downloadConcurrency: 2, downloadRetries: 3, playlistAutoSync: false, playlistSyncIntervalHours: 24,
   streamPriority: ['YouTube Music', 'YouTube', 'SoundCloud'], lyricsProvider: 'lrclib', saveLyricsLocally: true,
   discordRpc: false, discordClientId: '', ffmpegPath: '', ytDlpPath: '', denoPath: '', customCss: '', bannerPath: '', inhibitSleep: false,
-  eqPreset: 'Flat', eqBands: Array(10).fill(0), effectTempo: 1, effectPitch: 0, effectReverb: 0, effectDistortion: 0,
+  eqPreset: 'Flat', eqBands: Array(10).fill(0), eqQ: 1.1, stereoWidth: 1, effectTempo: 1, effectPitch: 0, effectReverb: 0, effectDistortion: 0,
   effectChain: ['eq', 'distortion', 'reverb'], effectsBypass: false, crossfadeSeconds: 0, normalizeLoudness: false, loudnessTargetLufs: -14,
   audioOutputDeviceId: '', sleepTimerMinutes: 0, viewMode: 'grid', groupBy: 'album', autoWatchFolders: false, duplicateScanMode: 'both',
   uiDensity: 'comfortable', cornerRadius: 14, uiScale: 100, sidebarWidth: 238, gridColumns: 0, animationsEnabled: true,

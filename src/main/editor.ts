@@ -15,10 +15,12 @@ export function exportEditedAudio(request: EditorRequest, settings: AppSettings,
   const distortion = Math.min(1, Math.max(0, request.distortion ?? 0))
   const bands = request.eqBands?.length ? request.eqBands : []
   const frequencies = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+  const eqQ = Math.max(0.3, Math.min(8, request.eqQ ?? settings.eqQ ?? 1.1))
+  const stereoWidth = Math.max(0, Math.min(2, request.stereoWidth ?? settings.stereoWidth ?? 1))
   const selectedChain: EffectName[] = (request.effectChain?.length ? request.effectChain : settings.effectChain || ['eq','distortion','reverb']).filter((v,i,a) => a.indexOf(v) === i)
   for (const effect of selectedChain) {
     if (effect === 'eq') {
-      bands.forEach((db, i) => { const gain = Math.max(-12, Math.min(12, Number(db) || 0)); if (gain !== 0) filters.push(`equalizer=f=${frequencies[i]}:t=q:w=1.1:g=${gain.toFixed(1)}`) })
+      bands.forEach((db, i) => { const gain = Math.max(-12, Math.min(12, Number(db) || 0)); if (gain !== 0) filters.push(`equalizer=f=${frequencies[i]}:t=q:w=${eqQ.toFixed(2)}:g=${gain.toFixed(1)}`) })
       const gain = Math.min(18, Math.max(-18, request.eqGain ?? 0))
       if (!bands.length && gain !== 0) filters.push(`volume=${gain.toFixed(1)}dB`)
     } else if (effect === 'reverb' && reverb > 0) {
@@ -27,6 +29,7 @@ export function exportEditedAudio(request: EditorRequest, settings: AppSettings,
       filters.push(`asoftclip=type=tanh:threshold=${Math.max(0.1, 1 - distortion * 0.85).toFixed(3)}`)
     }
   }
+  if (Math.abs(stereoWidth - 1) > 0.001) filters.push(`stereotools=mlev=1:slev=${stereoWidth.toFixed(3)}`)
   const args = ['-hide_banner', '-n', '-ss', String(request.start), '-i', request.inputPath]
   if (request.end !== undefined) args.push('-t', String(request.end - request.start))
   if (filters.length) args.push('-af', filters.join(','))
