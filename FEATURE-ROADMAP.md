@@ -88,6 +88,11 @@ MyRiff should only download audio that the user is authorised to save and that t
 - [x] Nested playlist folders with subfolders, rename/delete, unfiled recovery and playlist reassignment.
 - [x] Folder-aware backup/export restoration with backwards compatibility for version-1 backups.
 
+## Playlist editing and recovery completion pass
+
+- [x] Reorder entries in a playlist through HTML drag-and-drop, plus keyboard-accessible move-earlier/move-later controls; order is validated and persisted in SQLite.
+- [x] Backups include library-root watch settings, saved playlist sync sources and download job history. Restored queued/in-progress jobs are normalised to paused so the UI never claims an orphaned process is active.
+
 
 ## Release validation boundary
 
