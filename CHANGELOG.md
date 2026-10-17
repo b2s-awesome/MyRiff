@@ -17,3 +17,9 @@
 - No committed `package-lock.json`: the npm registry could not be resolved in the build environment, so dependency installation and lockfile generation were unavailable.
 - Full TypeScript typecheck, Electron build, native `better-sqlite3` rebuild, packaged launch and audio integration tests have not passed in this environment.
 - True overlapping crossfade/gapless playback, full A/B player, parametric EQ/stereo width, waveform zoom/transient snapping, word-level karaoke lyrics, keyboard shortcut capture/conflict detection, in-app update/rollback, and full cross-platform runtime validation remain incomplete.
+
+
+## Unreleased
+
+- Add nested playlist folders with subfolders, direct playlist assignment, folder-aware backup restore, and safe folder deletion that preserves playlists.
+- Improve playback lab with real overlapping crossfade, ordered DSP effects, and waveform zoom/pan (after CI validation).
