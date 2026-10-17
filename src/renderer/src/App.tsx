@@ -614,7 +614,8 @@ export default function App() {
     const format = job.format || settings?.downloadFormat || 'opus'
     try {
       const id = job.includePlaylist ? await window.myriff.startPlaylistDownload(job.url, format) : await window.myriff.startDownload(job.url, format)
-      setDownloadJobs(old => [{ ...job, id, status: 'queued', percent: 0, speed: '', eta: '', error: undefined }, ...old.filter(item => item.id !== job.id && item.id !== id)].slice(0, 50))
+      const resumedJob: DownloadProgress = { ...job, id, status: 'queued', percent: 0, speed: '', eta: '', error: undefined }
+      setDownloadJobs(old => [resumedJob, ...old.filter(item => item.id !== job.id && item.id !== id)].slice(0, 50))
       notify(job.status === 'paused' ? 'Resume queued. MyRiff will continue retained partial files where the source supports it.' : 'Download retry queued.')
     } catch (error) { notify(error instanceof Error ? error.message : 'Could not resume this download.') }
   }
