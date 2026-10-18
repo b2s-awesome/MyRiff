@@ -172,6 +172,7 @@ jobs:
             echo "::error::The draft-release action did not provide a valid release ID."
             exit 1
           fi
+
           release_json="$(curl --fail-with-body --silent --show-error \
             -H "$auth_header" -H "$accept_header" -H "$version_header" \
             "$api/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"
@@ -182,26 +183,7 @@ jobs:
           fi
 
           asset_names="$(jq -r '.assets[].name' <<< "$release_json")"
-          dmg_count="$(grep -Ec '\.dmg
-            if ! grep -Fq "$ext" <<< "$asset_names"; then
-              echo "::error::Release $RELEASE_TAG is missing a required $ext package."
-              printf '%s\n' "$asset_names"
-              exit 1
-            fi
-          done
-
-          payload="$(jq -n --arg prerelease "$RELEASE_PRERELEASE" \
-            '{draft: false, prerelease: ($prerelease == "true")}')"
-          published_json="$(curl --fail-with-body --silent --show-error \
-            -X PATCH -H "$auth_header" -H "$accept_header" -H "$version_header" \
-            -H 'Content-Type: application/json' \
-            --data "$payload" "$api/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"
-          if [[ "$(jq -r '.draft' <<< "$published_json")" != "false" ]]; then
-            echo "::error::GitHub did not confirm that release $RELEASE_TAG was published."
-            exit 1
-          fi
-          echo "Published $RELEASE_TAG with $(jq '.assets | length' <<< "$published_json") assets."
- <<< "$asset_names" || true)"
+          dmg_count="$(grep -Ec '\.dmg$' <<< "$asset_names" || true)"
           if (( dmg_count < 2 )); then
             echo "::error::Expected both Apple Silicon and Intel macOS disk images; found $dmg_count."
             printf '%s\n' "$asset_names"
