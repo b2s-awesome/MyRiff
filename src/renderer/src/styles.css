@@ -136,3 +136,6 @@
 .playlist-track-row .row-actions{opacity:1;gap:0;min-width:0}
 .playlist-track-row .row-actions button{padding:4px;min-width:23px}
 @media(max-width:760px){.playlist-track-row{grid-template-columns:minmax(0,1fr) 45px 122px;gap:6px}.playlist-track-row .row-actions{justify-content:flex-end}.playlist-track-row .row-actions button{padding:3px;min-width:22px}}
+
+/* Per-band parametric EQ centre-frequency controls. */
+.eq-frequency-input{width:100%;min-width:0;max-width:58px;height:24px;padding:2px 3px;text-align:center;border:1px solid var(--line-strong);border-radius:6px;background:var(--panel);color:var(--text);font:9px 'DM Mono',monospace;appearance:textfield}.eq-frequency-input::-webkit-inner-spin-button,.eq-frequency-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.eq-band>span{max-width:100%;overflow:hidden;text-overflow:ellipsis}.effects-drawer .eq-frequency-input{max-width:49px;height:21px;font-size:8px}@media(max-width:760px){.eq-frequency-input{max-width:43px;font-size:8px}.effects-drawer .eq-frequency-input{max-width:40px}}
