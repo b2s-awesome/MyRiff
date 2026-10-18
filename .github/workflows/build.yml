@@ -87,7 +87,10 @@ jobs:
             platform: Windows
             script: dist:win
           - os: macos-latest
-            platform: macOS
+            platform: macOS ARM64
+            script: dist:mac
+          - os: macos-15-intel
+            platform: macOS Intel
             script: dist:mac
           - os: ubuntu-latest
             platform: Linux
@@ -125,7 +128,7 @@ jobs:
           RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
         run: gh release upload "$RELEASE_TAG" release/*.exe --clobber
       - name: Upload macOS disk image directly to draft release
-        if: needs.prepare-release.result == 'success' && matrix.platform == 'macOS'
+        if: needs.prepare-release.result == 'success' && startsWith(matrix.platform, 'macOS')
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -179,6 +182,31 @@ jobs:
           fi
 
           asset_names="$(jq -r '.assets[].name' <<< "$release_json")"
+          dmg_count="$(grep -Ec '\.dmg
+            if ! grep -Fq "$ext" <<< "$asset_names"; then
+              echo "::error::Release $RELEASE_TAG is missing a required $ext package."
+              printf '%s\n' "$asset_names"
+              exit 1
+            fi
+          done
+
+          payload="$(jq -n --arg prerelease "$RELEASE_PRERELEASE" \
+            '{draft: false, prerelease: ($prerelease == "true")}')"
+          published_json="$(curl --fail-with-body --silent --show-error \
+            -X PATCH -H "$auth_header" -H "$accept_header" -H "$version_header" \
+            -H 'Content-Type: application/json' \
+            --data "$payload" "$api/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"
+          if [[ "$(jq -r '.draft' <<< "$published_json")" != "false" ]]; then
+            echo "::error::GitHub did not confirm that release $RELEASE_TAG was published."
+            exit 1
+          fi
+          echo "Published $RELEASE_TAG with $(jq '.assets | length' <<< "$published_json") assets."
+ <<< "$asset_names" || true)"
+          if (( dmg_count < 2 )); then
+            echo "::error::Expected both Apple Silicon and Intel macOS disk images; found $dmg_count."
+            printf '%s\n' "$asset_names"
+            exit 1
+          fi
           for ext in '.exe' '.dmg' '.AppImage' '.deb' '.tar.gz'; do
             if ! grep -Fq "$ext" <<< "$asset_names"; then
               echo "::error::Release $RELEASE_TAG is missing a required $ext package."
