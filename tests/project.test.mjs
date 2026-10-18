@@ -115,10 +115,9 @@ test('SoundTouch playback path does not multiply tempo through both the media el
   assert.match(source, /preservesPitch = false[\s\S]*playbackRate = Math\.max/)
 })
 
-test('CI resolves one npm lockfile and shares it across validation and native platform builds', () => {
+test('CI installs from the committed lockfile without consuming Actions artifact storage for dependency handoff', () => {
   const workflow = read('.github/workflows/build.yml')
-  assert.match(workflow, /npm install --package-lock-only --ignore-scripts/)
-  assert.match(workflow, /name: dependency-lock/)
+  assert.match(workflow, /test -f package-lock\.json/)
   assert.match(workflow, /npm ci --no-audit --no-fund/)
   assert.match(workflow, /windows-latest/)
   assert.match(workflow, /macos-latest/)
@@ -127,6 +126,8 @@ test('CI resolves one npm lockfile and shares it across validation and native pl
   assert.match(workflow, /Smoke-test packaged Linux app under Xvfb/)
   assert.match(workflow, /Smoke-test packaged app on Windows\/macOS/)
   assert.match(workflow, /cancel-in-progress: true/)
+  assert.ok(!workflow.includes('name: dependency-lock'))
+  assert.ok(!workflow.includes('persist-lockfile:'))
 })
 
 
@@ -234,17 +235,18 @@ test('packaged smoke test verifies renderer and preload initialization with boun
   assert.ok(script.includes("Contents', 'MacOS', 'MyRiff'"))
 })
 
-test('build workflow smoke-tests each OS and persists the lockfile after the full platform matrix', () => {
+test('release workflow publishes directly to GitHub Releases after packaged smoke tests without Actions artifacts', () => {
   const workflow = read('.github/workflows/build.yml')
   assert.match(workflow, /npm run smoke:packaged/)
   assert.match(workflow, /xvfb-run --auto-servernum npm run smoke:packaged/)
-  assert.ok(workflow.includes("artifact_path: 'release/*.exe'"))
-  assert.ok(workflow.includes("artifact_path: 'release/*.dmg'"))
+  assert.ok(workflow.includes('gh release upload "$RELEASE_TAG" release/*.exe --clobber'))
+  assert.ok(workflow.includes('gh release upload "$RELEASE_TAG" release/*.dmg --clobber'))
   assert.ok(workflow.includes('release/*.AppImage'))
-  assert.ok(workflow.includes('persist-lockfile:'))
-  assert.ok(workflow.includes('needs: [resolve-dependencies, validate, build]'))
-  assert.ok(workflow.includes('git push origin HEAD:main'))
-  assert.ok(!workflow.includes(['name: dependency-lock', '          path: release-assets'].join('\n')))
+  assert.ok(workflow.includes("needs.build.result == 'success'"))
+  assert.ok(workflow.includes('prepare-release:'))
+  assert.ok(workflow.includes('publish-release:'))
+  assert.ok(!workflow.includes('actions/upload-artifact'))
+  assert.ok(!workflow.includes('persist-lockfile:'))
 })
 
 
