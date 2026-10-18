@@ -168,6 +168,7 @@ jobs:
           RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
           RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
           RELEASE_PRERELEASE: ${{ needs.prepare-release.outputs.prerelease }}
+          RELEASE_SHA: ${{ github.sha }}
         run: |
           release_id="$RELEASE_ID"
           version="${RELEASE_TAG#v}"
@@ -176,4 +177,4 @@ jobs:
             [[ -z "$asset_id" ]] || gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id"
           done <<< "$stale_assets"
           gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
-            -F draft=false -F prerelease="$RELEASE_PRERELEASE"
+            -F draft=false -F prerelease="$RELEASE_PRERELEASE" -f target_commitish="$RELEASE_SHA"
