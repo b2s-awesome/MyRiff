@@ -52,6 +52,7 @@ jobs:
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       prerelease: ${{ steps.meta.outputs.prerelease }}
+      release_id: ${{ steps.create.outputs.id }}
     steps:
       - name: Resolve release tag and channel
         id: meta
@@ -62,6 +63,7 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
       - name: Create draft release at the validated commit
+        id: create
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
@@ -154,6 +156,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
           RELEASE_PRERELEASE: ${{ needs.prepare-release.outputs.prerelease }}
         run: |
           set -euo pipefail
@@ -162,12 +165,16 @@ jobs:
           accept_header="Accept: application/vnd.github+json"
           version_header="X-GitHub-Api-Version: 2022-11-28"
 
+          if [[ ! "$RELEASE_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::The draft-release action did not provide a valid release ID."
+            exit 1
+          fi
           release_json="$(curl --fail-with-body --silent --show-error \
             -H "$auth_header" -H "$accept_header" -H "$version_header" \
-            "$api/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
-          release_id="$(jq -r '.id // empty' <<< "$release_json")"
-          if [[ ! "$release_id" =~ ^[0-9]+$ ]]; then
-            echo "::error::GitHub did not return a release ID for tag $RELEASE_TAG."
+            "$api/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"
+          release_tag="$(jq -r '.tag_name // empty' <<< "$release_json")"
+          if [[ "$release_tag" != "$RELEASE_TAG" ]]; then
+            echo "::error::Release ID $RELEASE_ID belongs to '$release_tag', not '$RELEASE_TAG'."
             exit 1
           fi
 
