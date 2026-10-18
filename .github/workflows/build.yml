@@ -52,6 +52,7 @@ jobs:
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       prerelease: ${{ steps.meta.outputs.prerelease }}
+      release_id: ${{ steps.create-release.outputs.id }}
     steps:
       - name: Resolve release tag and channel
         id: meta
@@ -73,6 +74,7 @@ jobs:
               -f sha="$RELEASE_SHA" -F force=true
           fi
       - name: Create draft release at the validated commit
+        id: create-release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
@@ -164,9 +166,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
           RELEASE_PRERELEASE: ${{ needs.prepare-release.outputs.prerelease }}
         run: |
-          release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq .id)"
+          release_id="$RELEASE_ID"
           version="${RELEASE_TAG#v}"
           stale_assets="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id/assets" --jq --arg version "$version" '.[] | select(.name | contains($version) | not) | .id')"
           while IFS= read -r asset_id; do
