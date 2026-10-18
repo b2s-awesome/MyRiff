@@ -145,16 +145,49 @@ jobs:
       needs.build.result == 'success'
     needs: [prepare-release, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: write
     steps:
-      - name: Publish only after every platform build and smoke test passes
+      - name: Verify release assets and publish after all smoke tests pass
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
           RELEASE_PRERELEASE: ${{ needs.prepare-release.outputs.prerelease }}
         run: |
-          release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq .id)"
-          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
-            -F draft=false -F prerelease="$RELEASE_PRERELEASE"
+          set -euo pipefail
+          api="${GITHUB_API_URL:-https://api.github.com}"
+          auth_header="Authorization: Bearer $GH_TOKEN"
+          accept_header="Accept: application/vnd.github+json"
+          version_header="X-GitHub-Api-Version: 2022-11-28"
+
+          release_json="$(curl --fail-with-body --silent --show-error \
+            -H "$auth_header" -H "$accept_header" -H "$version_header" \
+            "$api/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+          release_id="$(jq -r '.id // empty' <<< "$release_json")"
+          if [[ ! "$release_id" =~ ^[0-9]+$ ]]; then
+            echo "::error::GitHub did not return a release ID for tag $RELEASE_TAG."
+            exit 1
+          fi
+
+          asset_names="$(jq -r '.assets[].name' <<< "$release_json")"
+          for ext in '.exe' '.dmg' '.AppImage' '.deb' '.tar.gz'; do
+            if ! grep -Fq "$ext" <<< "$asset_names"; then
+              echo "::error::Release $RELEASE_TAG is missing a required $ext package."
+              printf '%s\n' "$asset_names"
+              exit 1
+            fi
+          done
+
+          payload="$(jq -n --arg prerelease "$RELEASE_PRERELEASE" \
+            '{draft: false, prerelease: ($prerelease == "true")}')"
+          published_json="$(curl --fail-with-body --silent --show-error \
+            -X PATCH -H "$auth_header" -H "$accept_header" -H "$version_header" \
+            -H 'Content-Type: application/json' \
+            --data "$payload" "$api/repos/$GITHUB_REPOSITORY/releases/$release_id")"
+          if [[ "$(jq -r '.draft' <<< "$published_json")" != "false" ]]; then
+            echo "::error::GitHub did not confirm that release $RELEASE_TAG was published."
+            exit 1
+          fi
+          echo "Published $RELEASE_TAG with $(jq '.assets | length' <<< "$published_json") assets."
