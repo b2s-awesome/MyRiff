@@ -14,7 +14,9 @@ export function exportEditedAudio(request: EditorRequest, settings: AppSettings,
   const reverb = Math.min(1, Math.max(0, request.reverb ?? 0))
   const distortion = Math.min(1, Math.max(0, request.distortion ?? 0))
   const bands = request.eqBands?.length ? request.eqBands : []
-  const frequencies = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+  const defaultFrequencies = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+  const configuredFrequencies = request.eqFrequencies?.length === 10 ? request.eqFrequencies : settings.eqFrequencies?.length === 10 ? settings.eqFrequencies : defaultFrequencies
+  const frequencies = configuredFrequencies.map((value, index) => Math.max(20, Math.min(20000, Number(value) || defaultFrequencies[index])))
   const eqQ = Math.max(0.3, Math.min(8, request.eqQ ?? settings.eqQ ?? 1.1))
   const stereoWidth = Math.max(0, Math.min(2, request.stereoWidth ?? settings.stereoWidth ?? 1))
   const selectedChain: EffectName[] = (request.effectChain?.length ? request.effectChain : settings.effectChain || ['eq','distortion','reverb']).filter((v,i,a) => a.indexOf(v) === i)
