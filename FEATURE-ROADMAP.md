@@ -25,7 +25,8 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [ ] True gapless playback across codec/platform combinations.
 - [x] Overlapping crossfade using a preloaded second media element and shared DSP graph. Codec-specific quality needs real audio-device testing; exact sample-gapless playback remains unguaranteed.
 - [x] Same-position DSP-bypass A/B comparison and ordered effect-chain graph UI. A separate synchronised dual-deck A/B transport remains unimplemented.
-- [ ] Parametric EQ, stereo width and per-headphone/device profile wizard.
+- [x] Parametric 10-band EQ with editable centre frequencies, configurable Q and stereo width, available in live playback, saved audio profiles and FFmpeg exports.
+- [ ] Per-headphone/device calibration wizard.
 - [ ] Native exclusive/bit-perfect output and explicit sample-rate/bit-depth controls.
 
 ## Playlist Studio and downloads
