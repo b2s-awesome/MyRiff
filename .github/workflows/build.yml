@@ -192,7 +192,7 @@ jobs:
           published_json="$(curl --fail-with-body --silent --show-error \
             -X PATCH -H "$auth_header" -H "$accept_header" -H "$version_header" \
             -H 'Content-Type: application/json' \
-            --data "$payload" "$api/repos/$GITHUB_REPOSITORY/releases/$release_id")"
+            --data "$payload" "$api/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"
           if [[ "$(jq -r '.draft' <<< "$published_json")" != "false" ]]; then
             echo "::error::GitHub did not confirm that release $RELEASE_TAG was published."
             exit 1
