@@ -247,6 +247,7 @@ test('release workflow publishes directly to GitHub Releases after packaged smok
   assert.ok(workflow.includes('publish-release:'))
   assert.ok(workflow.includes('Align an existing tag to the exact release commit'))
   assert.ok(workflow.includes('git/refs/tags/$RELEASE_TAG'))
+  assert.ok(workflow.includes('ref="refs/tags/$RELEASE_TAG"'))
   assert.ok(workflow.includes('release_id: ${{ steps.create-release.outputs.id }}'))
   assert.ok(workflow.includes('RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}'))
   assert.ok(workflow.includes('-f target_commitish="$RELEASE_SHA"'))
