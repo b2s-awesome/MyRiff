@@ -61,6 +61,17 @@ jobs:
           if [[ "$tag" == *-* ]]; then prerelease=true; else prerelease=false; fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+      - name: Align an existing tag to the exact release commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$RELEASE_TAG" \
+              -f sha="$RELEASE_SHA" -F force=true
+          fi
       - name: Create draft release at the validated commit
         uses: softprops/action-gh-release@v2
         with:
@@ -156,5 +167,10 @@ jobs:
           RELEASE_PRERELEASE: ${{ needs.prepare-release.outputs.prerelease }}
         run: |
           release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq .id)"
+          version="${RELEASE_TAG#v}"
+          stale_assets="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id/assets" --jq --arg version "$version" '.[] | select(.name | contains($version) | not) | .id')"
+          while IFS= read -r asset_id; do
+            [[ -z "$asset_id" ]] || gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id"
+          done <<< "$stale_assets"
           gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
             -F draft=false -F prerelease="$RELEASE_PRERELEASE"
