@@ -46,7 +46,8 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] FFmpeg export to a new file, trim start/end, section export, speed, reverb, distortion and gain EQ.
 - [x] Waveform preview, section timestamps, LRCLIB lookup, LRC import, synced line highlight, manual timing and heuristic auto-timing.
 - [x] Draggable waveform trim selection, 0.1-second snapping and undo/redo for waveform range changes.
-- [x] Waveform zoom/pan with global-time mapping, draggable trim ranges, 0.1-second snapping and range undo/redo. Transient-aware snapping and persisted non-destructive edit sessions remain planned.
+- [x] Waveform zoom/pan with global-time mapping, draggable trim ranges, 0.1-second snapping and range undo/redo.
+- [x] Per-track non-destructive editor sessions auto-save trim range, speed, reverb, distortion and EQ controls; sessions survive restart and are included in backup/restore. Transient-aware snapping remains planned.
 - [x] Import and display authored per-word timestamps from Enhanced LRC files; line-only lyrics retain the approximate karaoke preview. Automatic speech alignment that generates word timestamps and an external lyric-provider plug-in interface remain planned.
 - [x] FFmpeg exports render EQ, distortion and reverb in the configured effect-chain order. Stereo-width processing is applied after that chain; live audio and exports may differ slightly because their DSP implementations differ.
 

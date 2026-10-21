@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
 import path from 'node:path'
-import type { AppSettings, EditorRequest, PlaybackState, StreamSource, DownloadFormat } from '../shared/types'
+import type { AppSettings, EditorRequest, EditorSession, PlaybackState, StreamSource, DownloadFormat } from '../shared/types'
 import * as store from './db'
 import { scanMusicFolder } from './library'
 import { startDownload, searchStreams, streamUrl, importRemotePlaylist, previewRemotePlaylist, cancelDownload, pauseDownload } from './streaming'
@@ -256,6 +256,13 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     if (deleteFile) { await fs.unlink(row.filePath).catch(() => undefined); store.removeTrack(row.filePath) }
     store.forgetDownload(id); return true
   })
+  ipcMain.handle('editor-session:get', (_e, trackPath: string) => store.getEditorSession(String(trackPath || '')))
+  ipcMain.handle('editor-session:save', (_e, session: Omit<EditorSession, 'updatedAt'>) => {
+    if (!session || typeof session !== 'object') throw new Error('Invalid editor session.')
+    return store.saveEditorSession(session)
+  })
+  ipcMain.handle('editor-session:list', () => store.listEditorSessions())
+  ipcMain.handle('editor-session:delete', (_e, trackPath: string) => store.deleteEditorSession(String(trackPath || '')))
   ipcMain.handle('editor:export', async (event, request: EditorRequest) => exportEditedAudio(request, store.getSettings(), percent => event.sender.send('editor:progress', percent)))
   ipcMain.handle('lyrics:search', async (_e, title: string, artist: string, album: string, duration: number) => fetchLyrics(title, artist, album, duration))
   ipcMain.handle('lyrics:import', async () => chooseAndParseLrc(win()))

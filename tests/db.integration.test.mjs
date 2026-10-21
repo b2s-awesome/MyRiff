@@ -169,6 +169,7 @@ test('SQLite integration: legacy version-1 backups without newer optional collec
     delete backup.libraryRoots
     delete backup.playlistSources
     delete backup.downloadJobs
+    delete backup.editorSessions
 
     api.closeDatabase()
     api.initDatabase(restoredDb)
@@ -177,6 +178,64 @@ test('SQLite integration: legacy version-1 backups without newer optional collec
     assert.deepEqual(api.listLibraryRoots(), [])
     assert.deepEqual(api.listPlaylistSources(), [])
     assert.deepEqual(api.listDownloadJobs(), [])
+  } finally {
+    try { api.closeDatabase() } catch { /* close only if initialisation succeeded */ }
+    await fs.rm(tempRoot, { recursive: true, force: true })
+  }
+})
+
+
+test('SQLite integration: per-track editor sessions persist and round-trip through full backups', async () => {
+  const api = await loadDatabaseModule()
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'myriff-editor-session-'))
+  const sourceDb = path.join(tempRoot, 'source')
+  const restoredDb = path.join(tempRoot, 'restored')
+  try {
+    api.initDatabase(sourceDb)
+    const musicRoot = path.join(tempRoot, 'music')
+    await fs.mkdir(musicRoot, { recursive: true })
+    const trackPath = path.join(musicRoot, 'session-track.flac')
+    addTrack(api, trackPath, 'Session Track')
+    const input = {
+      trackPath,
+      start: 5.25,
+      end: 93.4,
+      speed: 1.25,
+      reverb: 0.35,
+      distortion: 0.2,
+      eqBands: [-6, -3, 0, 1, 2, 3, 4, 5, 6, 7]
+    }
+    const saved = api.saveEditorSession(input)
+    assert.equal(saved.trackPath, trackPath)
+    assert.equal(saved.start, 5.25)
+    assert.equal(saved.end, 93.4)
+    assert.equal(saved.speed, 1.25)
+    assert.equal(saved.reverb, 0.35)
+    assert.equal(saved.distortion, 0.2)
+    assert.deepEqual(saved.eqBands, input.eqBands)
+    assert.equal(api.getEditorSession(trackPath)?.updatedAt, saved.updatedAt)
+    assert.deepEqual(api.listEditorSessions().map(session => session.trackPath), [trackPath])
+
+    const backup = api.exportBackupObject()
+    assert.equal(backup.editorSessions.length, 1)
+    api.closeDatabase()
+    api.initDatabase(restoredDb)
+    assert.equal(api.restoreBackupObject(backup), true)
+    const restored = api.getEditorSession(trackPath)
+    assert.ok(restored)
+    assert.equal(restored.start, input.start)
+    assert.equal(restored.end, input.end)
+    assert.equal(restored.speed, input.speed)
+    assert.equal(restored.reverb, input.reverb)
+    assert.equal(restored.distortion, input.distortion)
+    assert.deepEqual(restored.eqBands, input.eqBands)
+
+    const { updatedAt: _updatedAt, ...editable } = restored
+    api.saveEditorSession({ ...editable, start: 12.5 })
+    assert.equal(api.getEditorSession(trackPath)?.start, 12.5)
+    assert.equal(api.deleteEditorSession(trackPath), true)
+    assert.equal(api.getEditorSession(trackPath), null)
+    assert.deepEqual(api.listEditorSessions(), [])
   } finally {
     try { api.closeDatabase() } catch { /* close only if initialisation succeeded */ }
     await fs.rm(tempRoot, { recursive: true, force: true })
