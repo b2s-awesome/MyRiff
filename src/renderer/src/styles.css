@@ -155,3 +155,7 @@
 
 /* Accessible speaker/output routing diagnostics. */
 .audio-calibration-panel{margin-top:12px;padding:12px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.audio-calibration-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--accent)}.audio-calibration-heading b,.audio-calibration-heading small{display:block}.audio-calibration-heading b{font-size:11px;color:var(--text)}.audio-calibration-heading small{max-width:540px;margin-top:4px;font-size:9px;line-height:1.55;color:var(--muted)}.audio-calibration-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}.audio-calibration-actions button{font-size:10px}.audio-calibration-panel .footnote{min-height:14px;margin-top:9px}
+
+
+/* Distinguish app-scoped keybindings from OS-global accelerators. */
+.global-shortcut-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid var(--line);margin-top:10px}.global-shortcut-head b,.global-shortcut-head small{display:block}.global-shortcut-head b{font-size:11px}.global-shortcut-head small{max-width:500px;font-size:9px;line-height:1.5;color:var(--muted);margin-top:4px}.global-shortcut-grid{margin-top:8px}.global-shortcut-grid input:disabled{opacity:.5}@media(max-width:540px){.global-shortcut-head{align-items:flex-start;flex-direction:column}}
