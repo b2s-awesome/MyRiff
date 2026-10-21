@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — safe metadata export undo
+
+- Added an undo record for single-track and bulk MyRiff-generated tagged copies. Undo verifies that the output is a regular file and matches its recorded size, modification time and SHA-256 before deletion; changed, missing or unverifiable files are skipped. Original source paths are recorded separately and never targeted.
+- Added regression coverage for undo-record validation, database persistence, source-path protection and the renderer/IPC contract.
+
 ## Unreleased — release manager and local discovery
 
 - Added an on-demand stable/preview release browser with OS/architecture-aware installer selection and a mandatory local backup before opening an installer. The app does not silently replace its own binaries; older releases still require a manual install.
