@@ -18,7 +18,7 @@ const defaults: AppSettings = {
   globalShortcutsEnabled: true,
   globalKeyboardShortcuts: { playPause: 'MediaPlayPause', next: 'MediaNextTrack', previous: 'MediaPreviousTrack', volumeUp: 'VolumeUp', volumeDown: 'VolumeDown' },
   audioProfiles: [], historyEnabled: true, historyLimit: 500, autoEnrichMetadata: false, metadataProvider: 'musicbrainz',
-  playlistImportMatchThreshold: 0.76, portableMode: false, useSystemTitlebar: false
+  playlistImportMatchThreshold: 0.76, portableMode: false, useSystemTitlebar: false, updateChannel: 'preview'
 }
 
 let db: Database.Database
