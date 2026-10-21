@@ -26,7 +26,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Overlapping crossfade using a preloaded second media element and shared DSP graph. Codec-specific quality needs real audio-device testing; exact sample-gapless playback remains unguaranteed.
 - [x] Same-position DSP-bypass A/B comparison and ordered effect-chain graph UI. A separate synchronised dual-deck A/B transport remains unimplemented.
 - [x] Parametric 10-band EQ with editable centre frequencies, configurable Q and stereo width, available in live playback, saved audio profiles and FFmpeg exports.
-- [ ] Per-headphone/device calibration wizard.
+- [~] Basic audio output diagnostics: low-level left/centre/right test tones with explicit output-device routing when the runtime supports it. A full per-headphone frequency-response calibration and auto-EQ wizard remains planned.
 - [ ] Native exclusive/bit-perfect output and explicit sample-rate/bit-depth controls.
 
 ## Playlist Studio and downloads

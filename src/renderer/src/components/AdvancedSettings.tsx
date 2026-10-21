@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Archive, AudioLines, Bug, CheckCircle2, Download, Keyboard, LayoutGrid, SlidersHorizontal, Sparkles, Trash2, WandSparkles } from 'lucide-react'
 import type { AppSettings, AudioProfile } from '../../../shared/types'
@@ -19,6 +19,85 @@ export default function AdvancedSettings({ settings, onChange, audioOutputs, tra
   const [profileValue, setProfileValue] = useState('')
   const [backupBusy, setBackupBusy] = useState(false)
   const [capturingShortcut, setCapturingShortcut] = useState<string | null>(null)
+  const [calibrationStatus, setCalibrationStatus] = useState('No test tone is playing.')
+  const [calibrationBusy, setCalibrationBusy] = useState(false)
+  const calibrationRef = useRef<{ context: AudioContext; oscillator: OscillatorNode; timer: number | null } | null>(null)
+
+  const stopCalibrationTone = (message = 'Test tone stopped.') => {
+    const active = calibrationRef.current
+    if (active) {
+      if (active.timer !== null) window.clearTimeout(active.timer)
+      try { active.oscillator.stop() } catch { /* oscillator may already have stopped */ }
+      void active.context.close().catch(() => undefined)
+      calibrationRef.current = null
+    }
+    setCalibrationBusy(false)
+    setCalibrationStatus(message)
+  }
+
+  const playCalibrationTone = async (pan: number, channel: 'left' | 'centre' | 'right') => {
+    if (calibrationRef.current) stopCalibrationTone('Replacing the previous test tone…')
+    setCalibrationBusy(true)
+    setCalibrationStatus('Preparing a short, low-level test tone…')
+    let context: AudioContext | null = null
+    try {
+      const activeContext = new AudioContext()
+      context = activeContext
+      const sinkContext = activeContext as AudioContext & { setSinkId?: (deviceId: string) => Promise<void> }
+      const outputId = settings.audioOutputDeviceId
+      if (outputId) {
+        if (typeof sinkContext.setSinkId !== 'function') {
+          throw new Error('This Electron runtime cannot route a calibration tone to the selected device. Choose System default, then test your normal playback.')
+        }
+        await sinkContext.setSinkId(outputId)
+      }
+      await activeContext.resume()
+      const oscillator = context.createOscillator()
+      const gain = context.createGain()
+      const panner = context.createStereoPanner()
+      const now = activeContext.currentTime
+      oscillator.type = 'sine'
+      oscillator.frequency.setValueAtTime(330, now)
+      panner.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), now)
+      gain.gain.setValueAtTime(0, now)
+      gain.gain.linearRampToValueAtTime(0.055, now + 0.04)
+      gain.gain.setValueAtTime(0.055, now + 0.42)
+      gain.gain.linearRampToValueAtTime(0, now + 0.72)
+      oscillator.connect(gain)
+      gain.connect(panner)
+      panner.connect(activeContext.destination)
+      oscillator.start(now)
+      oscillator.stop(now + 0.75)
+      const outputLabel = outputId
+        ? (audioOutputs.find(device => device.deviceId === outputId)?.label || 'selected output device')
+        : 'system default output'
+      setCalibrationStatus(`Playing a quiet 330 Hz ${channel} tone on ${outputLabel} for less than one second.`)
+      const timer = window.setTimeout(() => {
+        if (calibrationRef.current?.context !== activeContext) return
+        calibrationRef.current = null
+        setCalibrationBusy(false)
+        setCalibrationStatus(`The ${channel} test tone finished. Did it come from the expected speaker or channel?`)
+        void activeContext.close().catch(() => undefined)
+      }, 850)
+      calibrationRef.current = { context: activeContext, oscillator, timer }
+    } catch (error) {
+      if (context) void context.close().catch(() => undefined)
+      calibrationRef.current = null
+      setCalibrationBusy(false)
+      const message = error instanceof Error ? error.message : 'Could not play a test tone.'
+      setCalibrationStatus(message)
+      onNotify(message)
+    }
+  }
+
+  useEffect(() => () => {
+    const active = calibrationRef.current
+    if (!active) return
+    if (active.timer !== null) window.clearTimeout(active.timer)
+    try { active.oscillator.stop() } catch { /* oscillator may already have stopped */ }
+    void active.context.close().catch(() => undefined)
+    calibrationRef.current = null
+  }, [])
 
   const runDiagnostics = async () => {
     setCheckingTools(true)
@@ -59,6 +138,16 @@ export default function AdvancedSettings({ settings, onChange, audioOutputs, tra
       <RangeSetting label="Target loudness" description="Louder targets increase perceived volume. −14 LUFS is a useful general-purpose starting point." value={settings.loudnessTargetLufs} min={-23} max={-8} step={0.5} suffix=" LUFS" onChange={v => onChange({ loudnessTargetLufs: v })}/>
       <RangeSetting label="Track transition fade" description="A short fade can soften track boundaries; true overlap crossfading is a separate playback-engine milestone." value={settings.crossfadeSeconds} min={0} max={12} step={0.5} suffix=" s" onChange={v => onChange({ crossfadeSeconds: v })}/>
       <div className="settings-form-grid"><label><span>Audio output device</span><select value={settings.audioOutputDeviceId} onChange={e => onChange({ audioOutputDeviceId: e.target.value })}><option value="">System default</option>{audioOutputs.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || `Audio output ${d.deviceId.slice(0, 8)}`}</option>)}</select></label><label><span>Sleep timer</span><select value={settings.sleepTimerMinutes} onChange={e => onChange({ sleepTimerMinutes: Number(e.target.value) })}><option value={0}>Off</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={45}>45 minutes</option><option value={60}>60 minutes</option><option value={90}>90 minutes</option><option value={120}>120 minutes</option></select></label></div>
+      <div className="audio-calibration-panel">
+        <div className="audio-calibration-heading"><div><b>Output check</b><small>Play a brief, quiet tone to confirm routing and left/right channel placement. Nothing is recorded or uploaded.</small></div><AudioLines size={18}/></div>
+        <div className="audio-calibration-actions">
+          <button className="secondary-button" disabled={calibrationBusy} onClick={() => void playCalibrationTone(-1, 'left')}>Test left</button>
+          <button className="secondary-button" disabled={calibrationBusy} onClick={() => void playCalibrationTone(0, 'centre')}>Test centre</button>
+          <button className="secondary-button" disabled={calibrationBusy} onClick={() => void playCalibrationTone(1, 'right')}>Test right</button>
+          <button className="ghost-button" disabled={!calibrationBusy} onClick={() => stopCalibrationTone()}>Stop</button>
+        </div>
+        <p className="footnote" role="status" aria-live="polite">{calibrationStatus}</p>
+      </div>
       <div className="setting-option"><div><b>Bypass all effects</b><small>Quick A/B comparison against clean playback.</small></div><Toggle checked={settings.effectsBypass} onChange={v => onChange({ effectsBypass: v })}/></div>
       <div className="settings-form-grid"><label><span>Effects chain order</span><select value={settings.effectChain.join(',')} onChange={e => onChange({ effectChain: e.target.value.split(',') as AppSettings['effectChain'] })}><option value="eq,distortion,reverb">EQ → Distortion → Reverb</option><option value="eq,reverb,distortion">EQ → Reverb → Distortion</option><option value="distortion,eq,reverb">Distortion → EQ → Reverb</option><option value="reverb,eq,distortion">Reverb → EQ → Distortion</option></select></label><label><span>History limit</span><select value={settings.historyLimit} onChange={e => onChange({ historyLimit: Number(e.target.value) })}><option value={100}>100 plays</option><option value={500}>500 plays</option><option value={1000}>1,000 plays</option><option value={5000}>5,000 plays</option></select></label></div>
     </SettingsCard>
