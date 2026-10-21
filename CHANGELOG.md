@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — release manager and local discovery
+
+- Added an on-demand stable/preview release browser with OS/architecture-aware installer selection and a mandatory local backup before opening an installer. The app does not silently replace its own binaries; older releases still require a manual install.
+- Added optional local spectral/chroma similarity ranking for Local Radio. Audio segments are processed with FFmpeg, bounded for resource use, and cached locally by file identity and feature version; no audio is uploaded.
+- Added strict GitHub host/path validation for release pages and installer links, plus regression coverage for the release flow.
+
+
 ## Release hardening in progress
 
 - Added a packaged startup smoke-test runner that verifies the renderer root and preload bridge before requiring a clean exit.
