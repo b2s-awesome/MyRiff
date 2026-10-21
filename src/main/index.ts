@@ -49,32 +49,44 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, '../preload/index.mjs'), contextIsolation: true, nodeIntegration: false, sandbox: false }
   })
   mainWindow.once('ready-to-show', () => mainWindow?.show())
-  if (process.env.MYRIFF_SMOKE_MARKER && mainWindow) {
+  const smokeMarker = process.env.MYRIFF_SMOKE_MARKER
+  const reportSmokeFailure = (message: string) => {
+    if (!smokeMarker) return
+    void fs.writeFile(smokeMarker, JSON.stringify({ ok: false, error: message }), 'utf8').catch(() => undefined)
+    setTimeout(() => app.exit(1), 150)
+  }
+  if (smokeMarker && mainWindow) {
     const smokeWindow = mainWindow
+    smokeWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (isMainFrame) reportSmokeFailure(`Renderer navigation failed (code ${errorCode}): ${errorDescription}; URL=${validatedURL}`)
+    })
+    smokeWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
+      reportSmokeFailure(`Preload failed at ${preloadPath}: ${error.message}`)
+    })
+    smokeWindow.webContents.on('render-process-gone', (_event, details) => {
+      reportSmokeFailure(`Renderer process exited: ${details.reason} (exit code ${details.exitCode})`)
+    })
     smokeWindow.webContents.once('did-finish-load', () => {
       void (async () => {
         try {
           const ready = await smokeWindow.webContents.executeJavaScript(
             "Boolean(document.querySelector('#root') && window.myriff && typeof window.myriff.getSettings === 'function')"
           )
-          if (!ready) throw new Error('Renderer root or preload API did not initialise.')
-          await fs.writeFile(process.env.MYRIFF_SMOKE_MARKER!, JSON.stringify({
+          if (!ready) throw new Error('Renderer root or preload API did not initialise after did-finish-load.')
+          await fs.writeFile(smokeMarker, JSON.stringify({
             ok: true, rendererLoaded: true, preloadApi: true, platform: process.platform
           }), 'utf8')
           setTimeout(() => app.quit(), 400)
         } catch (error) {
-          try {
-            await fs.writeFile(process.env.MYRIFF_SMOKE_MARKER!, JSON.stringify({
-              ok: false, error: error instanceof Error ? error.message : String(error)
-            }), 'utf8')
-          } catch { /* the test runner will fail on its marker timeout */ }
-          app.exit(1)
+          reportSmokeFailure(error instanceof Error ? error.message : String(error))
         }
       })()
     })
   }
-  if (process.env.ELECTRON_RENDERER_URL) mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
-  else mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+  const loadPromise = process.env.ELECTRON_RENDERER_URL
+    ? mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
+    : mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+  if (smokeMarker) void loadPromise.catch(error => reportSmokeFailure(`Failed to load renderer: ${error instanceof Error ? error.message : String(error)}`))
   mainWindow.on('closed', () => { mainWindow = null })
 }
 function setMiniPlayer(enabled: boolean) {
