@@ -435,7 +435,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     const settings = store.getSettings()
     const profileKeys = [
       'theme','accent','dynamicAccent','customCss','uiDensity','cornerRadius','uiScale','sidebarWidth','gridColumns',
-      'animationsEnabled','showArtworkBackground','showVisualizer','visualizerStyle','visualizerSensitivity','viewMode',
+      'animationsEnabled','showArtworkBackground','showVisualizer','visualizerStyle','visualizerSensitivity','visualizerLayouts','viewMode',
       'groupBy','showTrackNumbers','showYear','showGenre','defaultPage','useSystemTitlebar','eqPreset','eqBands','eqFrequencies',
       'effectTempo','effectPitch','effectReverb','effectDistortion','eqQ','stereoWidth','effectChain','effectsBypass','crossfadeSeconds',
       'normalizeLoudness','loudnessTargetLufs','audioOutputDeviceId','audioProfiles','keyboardShortcuts'
@@ -459,7 +459,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     }
     const allowed = new Set([
       'theme','accent','dynamicAccent','customCss','uiDensity','cornerRadius','uiScale','sidebarWidth','gridColumns',
-      'animationsEnabled','showArtworkBackground','showVisualizer','visualizerStyle','visualizerSensitivity','viewMode',
+      'animationsEnabled','showArtworkBackground','showVisualizer','visualizerStyle','visualizerSensitivity','visualizerLayouts','viewMode',
       'groupBy','showTrackNumbers','showYear','showGenre','defaultPage','useSystemTitlebar','eqPreset','eqBands','eqFrequencies',
       'effectTempo','effectPitch','effectReverb','effectDistortion','eqQ','stereoWidth','effectChain','effectsBypass','crossfadeSeconds',
       'normalizeLoudness','loudnessTargetLufs','audioOutputDeviceId','audioProfiles','keyboardShortcuts'
@@ -496,6 +496,20 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       if (key === 'eqBands' && (!Array.isArray(value) || value.length !== 10 || value.some(v => typeof v !== 'number' || !Number.isFinite(v) || v < -24 || v > 24))) continue
       if (key === 'eqFrequencies' && (!Array.isArray(value) || value.length !== 10 || value.some(v => typeof v !== 'number' || !Number.isFinite(v) || v < 20 || v > 20000))) continue
       if (key === 'effectChain' && (!Array.isArray(value) || value.length !== 3 || new Set(value).size !== 3 || value.some(v => !['eq','distortion','reverb'].includes(String(v))))) continue
+      if (key === 'visualizerLayouts') {
+        const layouts = value as unknown[]
+        const allowedStyles = new Set(['bars','wave','mirror','spectrum','dots'])
+        const ids = new Set<string>()
+        if (!Array.isArray(layouts) || layouts.length > 30) continue
+        const valid = layouts.every((item: any) => {
+          if (!item || typeof item !== 'object' || typeof item.id !== 'string' || !item.id.trim() || item.id.length > 80 || ids.has(item.id)) return false
+          if (typeof item.name !== 'string' || !item.name.trim() || item.name.length > 48) return false
+          if (!allowedStyles.has(item.style) || typeof item.sensitivity !== 'number' || !Number.isFinite(item.sensitivity) || item.sensitivity < 0.25 || item.sensitivity > 2.5 || typeof item.enabled !== 'boolean' || typeof item.createdAt !== 'number' || !Number.isFinite(item.createdAt)) return false
+          ids.add(item.id)
+          return true
+        })
+        if (!valid) continue
+      }
       if (key === 'keyboardShortcuts') {
         const allowedKeys = ['playPause','next','previous','search','queue','favorite']
         if (!value || typeof value !== 'object' || Array.isArray(value) || Object.entries(value as Record<string, unknown>).some(([shortcut, binding]) => !allowedKeys.includes(shortcut) || typeof binding !== 'string' || binding.length > 80)) continue
