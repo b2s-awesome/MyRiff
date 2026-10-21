@@ -1,9 +1,10 @@
 import { app, ipcMain, dialog, shell, BrowserWindow, powerSaveBlocker, type OpenDialogOptions, type SaveDialogOptions } from 'electron'
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
 import path from 'node:path'
-import type { AppSettings, AppRelease, AppReleaseAsset, AppReleaseCheck, EditorRequest, EditorSession, PlaybackState, StreamSource, DownloadFormat, UpdateChannel } from '../shared/types'
+import type { AppSettings, AppRelease, AppReleaseAsset, AppReleaseCheck, EditorRequest, EditorSession, MetadataExportEntry, MetadataExportUndoResult, PlaybackState, StreamSource, DownloadFormat, UpdateChannel } from '../shared/types'
 import * as store from './db'
 import { scanMusicFolder } from './library'
 import { startDownload, searchStreams, streamUrl, importRemotePlaylist, previewRemotePlaylist, cancelDownload, pauseDownload } from './streaming'
@@ -26,6 +27,16 @@ let stopLibraryWatch: (() => Promise<void>) | null = null
 let watcherRoot = ''
 let playlistSchedulerTimer: ReturnType<typeof setInterval> | null = null
 const scheduledPlaylistSources = new Set<number>()
+
+async function sha256File(filePath: string): Promise<string> {
+  return new Promise((resolveHash, rejectHash) => {
+    const hash = createHash('sha256')
+    const stream = fsSync.createReadStream(filePath)
+    stream.on('data', chunk => hash.update(chunk))
+    stream.once('error', rejectHash)
+    stream.once('end', () => resolveHash(hash.digest('hex')))
+  })
+}
 
 function isAllowedGitHubReleaseUrl(url: URL, allowDownload: boolean) {
   if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.username || url.password) return false
@@ -338,6 +349,9 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     const result = await showSaveDialog({ title: 'Export metadata-enriched copy', defaultPath, filters: [{ name: 'Audio file', extensions: [ext.replace(/^\./, '')] }] })
     if (result.canceled || !result.filePath) return false
     await exportMetadataTaggedCopy(track.path, result.filePath, suggestion, store.getSettings())
+    const outputStat = await fs.stat(result.filePath)
+    const outputHash = await sha256File(result.filePath)
+    store.recordMetadataExportOperation('Metadata-enriched tagged copy', [{ path: result.filePath, sourcePath: track.path, size: outputStat.size, mtimeMs: outputStat.mtimeMs, sha256: outputHash }])
     return result.filePath
   })
   ipcMain.handle('metadata:bulk-export-copies', async (_e, trackPaths: string[], overrides: { artist?: string; album?: string; year?: number | null; titleTemplate?: string }) => {
@@ -351,6 +365,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     const settings = store.getSettings()
     const tracks = new Map(store.listTracks().map(track => [track.path, track]))
     const successes: string[] = []
+    const undoEntries: Array<Omit<MetadataExportEntry, 'state' | 'note'>> = []
     const failures: Array<{ path: string; error: string }> = []
     const used = new Set<string>()
     for (const trackPath of [...new Set(trackPaths)]) {
@@ -364,14 +379,81 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       used.add(outputPath.toLowerCase())
       const title = overrides.titleTemplate?.trim() ? overrides.titleTemplate.replace(/\{(title|artist|album|year)\}/gi, (_match, key: string) => String(({ title: track.title, artist: track.artist, album: track.album, year: track.year ?? '' } as Record<string, string | number>)[key.toLowerCase()] ?? '')).slice(0, 300) : track.title
       const tags = { title, artist: overrides.artist?.trim() || track.artist, album: overrides.album?.trim() || track.album, year: overrides.year ?? track.year }
-      try { await exportMetadataTaggedCopy(track.path, outputPath, tags, settings); successes.push(outputPath) }
-      catch (error) { failures.push({ path: track.path, error: error instanceof Error ? error.message : String(error) }) }
+      try {
+        await exportMetadataTaggedCopy(track.path, outputPath, tags, settings)
+        const outputStat = await fs.stat(outputPath)
+        const outputHash = await sha256File(outputPath)
+        undoEntries.push({ path: outputPath, sourcePath: track.path, size: outputStat.size, mtimeMs: outputStat.mtimeMs, sha256: outputHash })
+        successes.push(outputPath)
+      } catch (error) { failures.push({ path: track.path, error: error instanceof Error ? error.message : String(error) }) }
     }
-    if (successes.length) { try { await scanMusicFolder(outputFolder) } catch (error) { console.warn('Bulk tagged-copy indexing deferred:', error) } }
-    return { folder: outputFolder, successes, failures }
+    if (successes.length) {
+      if (undoEntries.length) store.recordMetadataExportOperation(`Bulk tagged-copy export (${successes.length} files)`, undoEntries)
+      try { await scanMusicFolder(outputFolder) } catch (error) { console.warn('Bulk tagged-copy indexing deferred:', error) }
+    }
+    return { folder: outputFolder, successes, failures, undoTracked: undoEntries.length }
   })
   ipcMain.handle('metadata:review-queue', () => store.listMetadataReviewQueue())
   ipcMain.handle('metadata:review-complete', (_e, trackPath: string) => store.completeMetadataReview(String(trackPath || '')))
+
+  ipcMain.handle('metadata:latest-export', () => store.getLatestMetadataExportOperation())
+  ipcMain.handle('metadata:undo-last-export', async (): Promise<MetadataExportUndoResult> => {
+    const operation = store.getLatestMetadataExportOperation()
+    if (!operation) return { operationId: null, description: null, removedPaths: [], skipped: [] }
+    const entries: MetadataExportEntry[] = operation.entries.map(entry => ({ ...entry }))
+    const removedPaths: string[] = []
+    const skipped: Array<{ path: string; reason: string }> = []
+    const markSkipped = (entry: MetadataExportEntry, reason: string) => {
+      entry.state = 'skipped'
+      entry.note = reason
+      skipped.push({ path: entry.path, reason })
+    }
+    for (const entry of entries) {
+      if (entry.state !== 'pending') continue
+      const outputPath = path.resolve(entry.path)
+      const sourcePath = path.resolve(entry.sourcePath)
+      if (!path.isAbsolute(entry.path) || !path.isAbsolute(entry.sourcePath) || outputPath === sourcePath) {
+        markSkipped(entry, 'Invalid path or output path matches original source.')
+        continue
+      }
+      let fileInfo
+      try { fileInfo = await fs.lstat(outputPath) } catch {
+        markSkipped(entry, 'File is missing; nothing was deleted.')
+        continue
+      }
+      if (!fileInfo.isFile() || fileInfo.isSymbolicLink()) {
+        markSkipped(entry, 'Path is no longer a regular file; nothing was deleted.')
+        continue
+      }
+      if (fileInfo.size !== entry.size || Math.abs(fileInfo.mtimeMs - entry.mtimeMs) > 3) {
+        markSkipped(entry, 'File size or modification time changed after export; left untouched.')
+        continue
+      }
+      let currentHash = ''
+      try { currentHash = await sha256File(outputPath) } catch {
+        markSkipped(entry, 'Could not verify file contents; left untouched.')
+        continue
+      }
+      if (currentHash !== entry.sha256) {
+        markSkipped(entry, 'File contents changed after export; left untouched.')
+        continue
+      }
+      try {
+        await fs.unlink(outputPath)
+        entry.state = 'removed'
+        entry.note = 'Verified generated copy deleted.'
+        removedPaths.push(outputPath)
+      } catch (error) {
+        markSkipped(entry, `Could not delete file: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    const indexedCopies = removedPaths.filter(filePath => store.isKnownTrack(filePath))
+    if (indexedCopies.length) store.removeTracks(indexedCopies)
+    store.updateMetadataExportOperation(operation.id, entries, true)
+    const target = win()
+    if (target && !target.isDestroyed()) target.webContents.send('library:updated', store.listTracks())
+    return { operationId: operation.id, description: operation.description, removedPaths, skipped }
+  })
   ipcMain.handle('metadata:search', (_e, trackPath: string) => {
     const settings = store.getSettings()
     if (settings.metadataProvider === 'off') throw new Error('Metadata lookup is disabled in Settings.')
