@@ -10,6 +10,7 @@
 - Added an on-demand stable/preview release browser with OS/architecture-aware installer selection and a mandatory local backup before opening an installer. The app does not silently replace its own binaries; older releases still require a manual install.
 - Added optional local spectral/chroma similarity ranking for Local Radio. Audio segments are processed with FFmpeg, bounded for resource use, and cached locally by file identity and feature version; no audio is uploaded.
 - Added strict GitHub host/path validation for release pages and installer links, plus regression coverage for the release flow.
+- Added a private-repository fallback: when anonymous GitHub release metadata returns 404, MyRiff prompts for a local backup before opening Releases in the signed-in browser. No GitHub credentials or tokens are requested or stored by MyRiff.
 
 
 ## Release hardening in progress
