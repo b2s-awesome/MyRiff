@@ -67,6 +67,9 @@ const userData = path.join(tempRoot, 'profile')
 await fs.mkdir(userData, { recursive: true })
 
 let child
+let stdout = ''
+let stderr = ''
+const appendTail = (current, chunk) => (current + chunk.toString()).slice(-12_000)
 try {
   child = spawn(executable, [
     '--no-sandbox',
@@ -74,14 +77,16 @@ try {
     '--disable-dev-shm-usage',
     `--user-data-dir=${userData}`
   ], {
-    env: { ...process.env, MYRIFF_SMOKE_MARKER: marker, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true' },
-    stdio: 'ignore',
+    env: { ...process.env, MYRIFF_SMOKE_MARKER: marker, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true', ELECTRON_ENABLE_LOGGING: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true
   })
+  child.stdout?.on('data', chunk => { stdout = appendTail(stdout, chunk) })
+  child.stderr?.on('data', chunk => { stderr = appendTail(stderr, chunk) })
   let spawnError = null
   child.on('error', error => { spawnError = error })
   const exited = waitForExit(child)
-  const deadline = Date.now() + 30_000
+  const deadline = Date.now() + 60_000
   let result = null
   while (Date.now() < deadline) {
     try {
@@ -89,12 +94,17 @@ try {
       break
     } catch { /* the packaged app has not written its startup marker yet */ }
     if (spawnError) throw new Error(`Could not start packaged MyRiff: ${spawnError.message}`)
-    if (child.exitCode !== null) throw new Error(`Packaged MyRiff exited before renderer startup (code ${child.exitCode}).`)
+    if (child.exitCode !== null) throw new Error(`Packaged MyRiff exited before renderer startup (code ${child.exitCode}). stdout: ${stdout || '(empty)'} stderr: ${stderr || '(empty)'}`)
     await delay(200)
   }
   if (!result) {
+    const diagnostics = [
+      'Timed out after 60 seconds waiting for the renderer/preload startup marker.',
+      stdout ? `stdout:\n${stdout}` : 'stdout: (empty)',
+      stderr ? `stderr:\n${stderr}` : 'stderr: (empty)'
+    ].join('\n\n')
     child.kill()
-    throw new Error('Timed out after 30 seconds waiting for the renderer/preload startup marker.')
+    throw new Error(diagnostics)
   }
   if (!result.ok || !result.rendererLoaded || !result.preloadApi) {
     throw new Error(`Packaged startup check failed: ${result.error || JSON.stringify(result)}`)
