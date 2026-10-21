@@ -130,7 +130,8 @@ export default function AdvancedSettings({ settings, onChange, audioOutputs, tra
       const result = await window.myriff.listAppReleases(settings.updateChannel)
       setReleaseCheck(result)
       setSelectedReleaseTag(result.releases[0]?.tag || '')
-      if (!result.releases.length) onNotify(`No public ${settings.updateChannel} releases were found.`)
+      if (result.browserAuthRequired) onNotify('MyRiff is private. Save a backup and open Releases in your browser to sign in securely.')
+      else if (!result.releases.length) onNotify(`No ${settings.updateChannel} releases were found.`)
     } catch (error) {
       setReleaseCheck(null)
       setReleaseCheckError(error instanceof Error ? error.message : 'Release check failed.')
@@ -149,6 +150,19 @@ export default function AdvancedSettings({ settings, onChange, audioOutputs, tra
       onNotify(`Backup saved to ${backupPath}. The ${release.tag} installer was opened in your browser; install it manually after reviewing the release notes.`)
     } catch (error) { onNotify(error instanceof Error ? error.message : 'Could not prepare the release installer.') }
     finally { setBackupBusy(false) }
+  }
+
+
+  const backupAndOpenPrivateReleases = async () => {
+    setBackupBusy(true)
+    try {
+      const backupPath = await window.myriff.exportBackup()
+      if (!backupPath) { onNotify('Private Releases were not opened because the backup was cancelled.'); return }
+      await window.myriff.openReleaseUrl('https://github.com/b2s-awesome/MyRiff/releases')
+      onNotify(`Backup saved to ${backupPath}. Sign in to GitHub in your browser, then download the installer matching this PC. MyRiff does not store GitHub credentials.`)
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : 'Could not prepare a backup or open GitHub Releases.')
+    } finally { setBackupBusy(false) }
   }
 
   const runDiagnostics = async () => {
@@ -275,7 +289,12 @@ export default function AdvancedSettings({ settings, onChange, audioOutputs, tra
         <div className="settings-path"><div><b>{releaseCheck ? `Checked ${new Date(releaseCheck.checkedAt).toLocaleString()}` : 'No release check run'}</b><small>Current app version: {releaseCheck?.appVersion || 'not checked'} · {releaseCheck?.platform || 'platform unknown'} {releaseCheck?.arch || ''}</small></div><button className="secondary-button" disabled={checkingReleases} onClick={checkReleases}><RefreshCw size={15}/>{checkingReleases ? 'Checking…' : 'Check releases'}</button></div>
       </div>
       {releaseCheckError && <p className="footnote" role="alert">{releaseCheckError}</p>}
-      {releaseCheck && releaseCheck.releases.length === 0 && <p className="footnote">No releases were found on this channel. Switch to Preview + stable to see preview builds. Release checks contact GitHub only after you press the button.</p>}
+      {releaseCheck?.browserAuthRequired && <div className="diagnostics-panel">
+        <div className="diagnostics-summary"><b>Sign in to access private releases</b><small>GitHub returned 404 for the private Releases API. This is expected for a private repository; it does not mean MyRiff is broken.</small><small>For security, MyRiff will not ask for or store your GitHub password, personal access token, or session cookie.</small></div>
+        <div className="inline-actions"><button className="secondary-button" disabled={backupBusy} onClick={() => void backupAndOpenPrivateReleases()}><ExternalLink size={15}/>{backupBusy ? 'Preparing backup…' : 'Back up & open private releases'}</button></div>
+        <p className="footnote">After the backup is saved, sign in to GitHub in your browser and choose the installer for this operating system. Review the release notes before installing; upgrades and rollbacks remain manual.</p>
+      </div>}
+      {releaseCheck && !releaseCheck.browserAuthRequired && releaseCheck.releases.length === 0 && <p className="footnote">No releases were found on this channel. Switch to Preview + stable to see preview builds. Release checks contact GitHub only after you press the button.</p>}
       {releaseCheck && releaseCheck.releases.length > 0 && <>
         <label className="settings-inline-select"><span>Release to inspect</span><select value={selectedReleaseTag} onChange={e => setSelectedReleaseTag(e.target.value)}>{releaseCheck.releases.map(release => <option key={release.tag} value={release.tag}>{release.name} · {release.tag}{release.prerelease ? ' (preview)' : ''}</option>)}</select></label>
         {(() => {
