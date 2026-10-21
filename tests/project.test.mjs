@@ -131,6 +131,30 @@ test('CI installs from the committed lockfile without consuming Actions artifact
 })
 
 
+test('OS-global shortcut settings have safe defaults, typed registration, profile round-trip and capture UI', () => {
+  const types = read('src/shared/types.ts')
+  const db = read('src/main/db.ts')
+  const main = read('src/main/index.ts')
+  const ipc = read('src/main/ipc.ts')
+  const helper = read('src/main/globalShortcuts.ts')
+  const settings = read('src/renderer/src/components/AdvancedSettings.tsx')
+  const readme = read('README.md')
+  assert.ok(types.includes('globalShortcutsEnabled: boolean'))
+  assert.ok(types.includes('globalKeyboardShortcuts: Record<string, string>'))
+  assert.ok(db.includes("globalShortcutsEnabled: true"))
+  assert.ok(db.includes("globalKeyboardShortcuts: { playPause: 'MediaPlayPause'"))
+  assert.ok(main.includes('configureGlobalShortcuts(getSettings())'))
+  assert.ok(ipc.includes("configureGlobalShortcuts(settings)"))
+  assert.ok(ipc.includes("if (key === 'globalKeyboardShortcuts')"))
+  assert.ok(ipc.includes("'globalShortcutsEnabled','globalKeyboardShortcuts'"))
+  assert.ok(helper.includes('globalShortcut.unregisterAll()'))
+  assert.ok(helper.includes('globalShortcut.register(accelerator'))
+  assert.ok(settings.includes('OS-global shortcuts'))
+  assert.ok(settings.includes('capturingGlobalShortcut'))
+  assert.ok(settings.includes('Restore OS-global defaults'))
+  assert.ok(readme.includes('OS-global media and MyRiff-volume shortcuts'))
+})
+
 test('keyboard shortcuts can be captured and duplicate bindings are rejected', () => {
   const settings = read('src/renderer/src/components/AdvancedSettings.tsx')
   const app = read('src/renderer/src/App.tsx')
