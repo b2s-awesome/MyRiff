@@ -16,7 +16,7 @@ const FEATURE_VERSION_LENGTH = SEGMENT_COUNT * FEATURES_PER_SEGMENT
 
 function decodePcm(filePath: string, executable: string): Promise<Float32Array> {
   return new Promise((resolve, reject) => {
-    let child
+    let child: ReturnType<typeof spawn>
     try {
       child = spawn(executable, [
         '-hide_banner', '-loglevel', 'error', '-nostdin',
@@ -50,7 +50,7 @@ function decodePcm(filePath: string, executable: string): Promise<Float32Array> 
       if (error) reject(error)
       else resolve(samples || new Float32Array())
     }
-    child.stdout.on('data', (chunk: Buffer) => {
+    child.stdout?.on('data', (chunk: Buffer) => {
       if (settled) return
       totalBytes += chunk.length
       if (totalBytes > MAX_PCM_BYTES) {
@@ -61,7 +61,7 @@ function decodePcm(filePath: string, executable: string): Promise<Float32Array> 
       }
       chunks.push(chunk)
     })
-    child.stderr.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-3000) })
+    child.stderr?.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-3000) })
     child.once('error', (error: Error) => finish(new Error(`FFmpeg could not start: ${error.message}`)))
     child.once('close', (code: number | null, signal: string | null) => {
       if (settled) return
