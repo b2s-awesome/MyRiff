@@ -192,6 +192,8 @@ export interface AppSettings {
   showGenre: boolean
   confirmDestructiveActions: boolean
   keyboardShortcuts: Record<string, string>
+  globalShortcutsEnabled: boolean
+  globalKeyboardShortcuts: Record<string, string>
   audioProfiles: AudioProfile[]
   historyEnabled: boolean
   historyLimit: number
