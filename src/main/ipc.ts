@@ -438,6 +438,11 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
         markSkipped(entry, 'File contents changed after export; left untouched.')
         continue
       }
+      const finalInfo = await fs.lstat(outputPath).catch(() => null)
+      if (!finalInfo || !finalInfo.isFile() || finalInfo.isSymbolicLink() || finalInfo.dev !== fileInfo.dev || finalInfo.ino !== fileInfo.ino || finalInfo.size !== entry.size || Math.abs(finalInfo.mtimeMs - entry.mtimeMs) > 3) {
+        markSkipped(entry, 'File changed during verification; left untouched.')
+        continue
+      }
       try {
         await fs.unlink(outputPath)
         entry.state = 'removed'
