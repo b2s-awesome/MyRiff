@@ -15,6 +15,8 @@ const defaults: AppSettings = {
   showArtworkBackground: true, showVisualizer: true, visualizerStyle: 'bars', visualizerSensitivity: 1, visualizerLayouts: [], defaultPage: 'library',
   showTrackNumbers: true, showYear: true, showGenre: true, confirmDestructiveActions: true,
   keyboardShortcuts: { playPause: 'Space', next: 'MediaTrackNext', previous: 'MediaTrackPrevious', search: 'Ctrl+K', queue: 'Q', favorite: 'F' },
+  globalShortcutsEnabled: true,
+  globalKeyboardShortcuts: { playPause: 'MediaPlayPause', next: 'MediaNextTrack', previous: 'MediaPreviousTrack', volumeUp: 'VolumeUp', volumeDown: 'VolumeDown' },
   audioProfiles: [], historyEnabled: true, historyLimit: 500, autoEnrichMetadata: false, metadataProvider: 'musicbrainz',
   playlistImportMatchThreshold: 0.76, portableMode: false, useSystemTitlebar: false
 }
