@@ -153,6 +153,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
   ipcMain.handle('settings:set', async (_e, patch: Partial<AppSettings>) => {
     const before = store.getSettings()
     if (patch.eqQ !== undefined && (!Number.isFinite(patch.eqQ) || patch.eqQ < 0.3 || patch.eqQ > 8)) throw new Error('EQ bandwidth must be between 0.3 and 8.')
+    if (patch.eqFrequencies !== undefined && (!Array.isArray(patch.eqFrequencies) || patch.eqFrequencies.length !== 10 || patch.eqFrequencies.some(v => typeof v !== 'number' || !Number.isFinite(v) || v < 20 || v > 20000))) throw new Error('EQ centre frequencies must contain ten values between 20 and 20000 Hz.')
     if (patch.stereoWidth !== undefined && (!Number.isFinite(patch.stereoWidth) || patch.stereoWidth < 0 || patch.stereoWidth > 2)) throw new Error('Stereo width must be between 0 and 2.')
     const settings = store.setSettings(patch)
     if (patch.inhibitSleep !== undefined) refreshPowerBlocker(settings, playingNow)
@@ -408,7 +409,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     const profileKeys = [
       'theme','accent','dynamicAccent','customCss','uiDensity','cornerRadius','uiScale','sidebarWidth','gridColumns',
       'animationsEnabled','showArtworkBackground','showVisualizer','visualizerStyle','visualizerSensitivity','viewMode',
-      'groupBy','showTrackNumbers','showYear','showGenre','defaultPage','useSystemTitlebar','eqPreset','eqBands',
+      'groupBy','showTrackNumbers','showYear','showGenre','defaultPage','useSystemTitlebar','eqPreset','eqBands','eqFrequencies',
       'effectTempo','effectPitch','effectReverb','effectDistortion','eqQ','stereoWidth','effectChain','effectsBypass','crossfadeSeconds',
       'normalizeLoudness','loudnessTargetLufs','audioOutputDeviceId','audioProfiles','keyboardShortcuts'
     ] as const
@@ -432,7 +433,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     const allowed = new Set([
       'theme','accent','dynamicAccent','customCss','uiDensity','cornerRadius','uiScale','sidebarWidth','gridColumns',
       'animationsEnabled','showArtworkBackground','showVisualizer','visualizerStyle','visualizerSensitivity','viewMode',
-      'groupBy','showTrackNumbers','showYear','showGenre','defaultPage','useSystemTitlebar','eqPreset','eqBands',
+      'groupBy','showTrackNumbers','showYear','showGenre','defaultPage','useSystemTitlebar','eqPreset','eqBands','eqFrequencies',
       'effectTempo','effectPitch','effectReverb','effectDistortion','eqQ','stereoWidth','effectChain','effectsBypass','crossfadeSeconds',
       'normalizeLoudness','loudnessTargetLufs','audioOutputDeviceId','audioProfiles','keyboardShortcuts'
     ])
@@ -466,6 +467,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       if (key === 'loudnessTargetLufs' && (Number(value) < -23 || Number(value) > -8)) continue
       if (key === 'customCss' && String(value).length > 200_000) continue
       if (key === 'eqBands' && (!Array.isArray(value) || value.length !== 10 || value.some(v => typeof v !== 'number' || !Number.isFinite(v) || v < -24 || v > 24))) continue
+      if (key === 'eqFrequencies' && (!Array.isArray(value) || value.length !== 10 || value.some(v => typeof v !== 'number' || !Number.isFinite(v) || v < 20 || v > 20000))) continue
       if (key === 'effectChain' && (!Array.isArray(value) || value.length !== 3 || new Set(value).size !== 3 || value.some(v => !['eq','distortion','reverb'].includes(String(v))))) continue
       if (key === 'keyboardShortcuts') {
         const allowedKeys = ['playPause','next','previous','search','queue','favorite']
@@ -473,7 +475,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       }
       if (key === 'audioProfiles') {
         const profiles = value as unknown[]
-        const valid = Array.isArray(profiles) && profiles.length <= 100 && profiles.every((item: any) => item && typeof item === 'object' && typeof item.id === 'string' && item.id.length <= 100 && typeof item.name === 'string' && item.name.length <= 100 && ['manual','genre','artist','device'].includes(item.matchBy) && typeof item.matchValue === 'string' && item.matchValue.length <= 300 && Array.isArray(item.eqBands) && item.eqBands.length === 10 && item.eqBands.every((v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= -24 && v <= 24) && (item.eqQ === undefined || (typeof item.eqQ === 'number' && Number.isFinite(item.eqQ) && item.eqQ >= 0.3 && item.eqQ <= 8)) && (item.stereoWidth === undefined || (typeof item.stereoWidth === 'number' && Number.isFinite(item.stereoWidth) && item.stereoWidth >= 0 && item.stereoWidth <= 2)) && typeof item.tempo === 'number' && Number.isFinite(item.tempo) && item.tempo >= 0.5 && item.tempo <= 2 && typeof item.pitch === 'number' && Number.isFinite(item.pitch) && item.pitch >= -12 && item.pitch <= 12 && typeof item.reverb === 'number' && Number.isFinite(item.reverb) && item.reverb >= 0 && item.reverb <= 1 && typeof item.distortion === 'number' && Number.isFinite(item.distortion) && item.distortion >= 0 && item.distortion <= 1 && typeof item.enabled === 'boolean')
+        const valid = Array.isArray(profiles) && profiles.length <= 100 && profiles.every((item: any) => item && typeof item === 'object' && typeof item.id === 'string' && item.id.length <= 100 && typeof item.name === 'string' && item.name.length <= 100 && ['manual','genre','artist','device'].includes(item.matchBy) && typeof item.matchValue === 'string' && item.matchValue.length <= 300 && Array.isArray(item.eqBands) && item.eqBands.length === 10 && item.eqBands.every((v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= -24 && v <= 24) && (item.eqFrequencies === undefined || (Array.isArray(item.eqFrequencies) && item.eqFrequencies.length === 10 && item.eqFrequencies.every((v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 20 && v <= 20000))) && (item.eqQ === undefined || (typeof item.eqQ === 'number' && Number.isFinite(item.eqQ) && item.eqQ >= 0.3 && item.eqQ <= 8)) && (item.stereoWidth === undefined || (typeof item.stereoWidth === 'number' && Number.isFinite(item.stereoWidth) && item.stereoWidth >= 0 && item.stereoWidth <= 2)) && typeof item.tempo === 'number' && Number.isFinite(item.tempo) && item.tempo >= 0.5 && item.tempo <= 2 && typeof item.pitch === 'number' && Number.isFinite(item.pitch) && item.pitch >= -12 && item.pitch <= 12 && typeof item.reverb === 'number' && Number.isFinite(item.reverb) && item.reverb >= 0 && item.reverb <= 1 && typeof item.distortion === 'number' && Number.isFinite(item.distortion) && item.distortion >= 0 && item.distortion <= 1 && typeof item.enabled === 'boolean')
         if (!valid) continue
       }
       patch[key] = value

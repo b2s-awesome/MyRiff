@@ -121,6 +121,7 @@ export interface AudioProfile {
   matchBy: 'manual' | 'genre' | 'artist' | 'device'
   matchValue: string
   eqBands: number[]
+  eqFrequencies?: number[]
   eqQ?: number
   stereoWidth?: number
   tempo: number
@@ -155,6 +156,7 @@ export interface AppSettings {
   inhibitSleep: boolean
   eqPreset: string
   eqBands: number[]
+  eqFrequencies: number[]
   eqQ: number
   stereoWidth: number
   effectTempo: number
@@ -217,6 +219,7 @@ export interface EditorRequest {
   distortion?: number
   eqGain?: number
   eqBands?: number[]
+  eqFrequencies?: number[]
   eqQ?: number
   stereoWidth?: number
   effectChain?: EffectName[]

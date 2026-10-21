@@ -113,7 +113,9 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
       primaryFadeGain.connect(input)
       nextFadeGain.connect(input)
       const filters: BiquadFilterNode[] = []
-      FREQUENCIES.forEach(frequency => {
+      FREQUENCIES.forEach((fallbackFrequency, index) => {
+        const maxFrequency = Math.min(20000, ctx.sampleRate / 2)
+        const frequency = Math.max(20, Math.min(maxFrequency, settings?.eqFrequencies?.[index] ?? fallbackFrequency))
         const filter = ctx.createBiquadFilter(); filter.type = 'peaking'; filter.frequency.value = frequency; filter.Q.value = Math.max(0.3, Math.min(8, settings?.eqQ ?? 1.1)); filter.gain.value = 0
         filters.push(filter)
       })
@@ -143,7 +145,7 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
       if (nextSoundTouch) { nextSoundTouch.playbackRate.value = Math.max(0.5, Math.min(2, settings?.effectTempo ?? 1)); nextSoundTouch.pitch.value = 1; nextSoundTouch.pitchSemitones.value = Math.max(-24, Math.min(24, settings?.effectPitch ?? 0)) }
     }
     if (contextRef.current.state === 'suspended') await contextRef.current.resume()
-  }, [audioRef, rebuildGraph, settings?.audioOutputDeviceId])
+  }, [audioRef, rebuildGraph, settings?.audioOutputDeviceId, settings?.eqQ, settings?.eqFrequencies])
 
   useEffect(() => { if (contextRef.current) rebuildGraph() }, [settings?.effectChain, settings?.stereoWidth, settings?.effectsBypass, rebuildGraph])
 
@@ -180,7 +182,12 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
     const now = contextRef.current?.currentTime ?? 0
     const bypass = settings.effectsBypass
     const eqQ = Math.max(0.3, Math.min(8, settings.eqQ ?? 1.1))
-    filtersRef.current.forEach(filter => filter.Q.setTargetAtTime(eqQ, now, .025))
+    const maxFrequency = Math.min(20000, (contextRef.current?.sampleRate ?? 44100) / 2)
+    filtersRef.current.forEach((filter, index) => {
+      const frequency = Math.max(20, Math.min(maxFrequency, settings.eqFrequencies?.[index] ?? FREQUENCIES[index]))
+      filter.frequency.setTargetAtTime(frequency, now, .025)
+      filter.Q.setTargetAtTime(eqQ, now, .025)
+    })
     settings.eqBands.forEach((gain, index) => {
       if (filtersRef.current[index]) filtersRef.current[index].gain.setTargetAtTime(bypass ? 0 : Math.max(-18, Math.min(18, gain)), now, .025)
     })

@@ -231,7 +231,7 @@ export default function App() {
     const key = `${current.path}|${profile?.id || 'none'}`
     if (lastProfileKeyRef.current === `profile:${key}`) return
     lastProfileKeyRef.current = `profile:${key}`
-    if (profile) saveSettings({ eqBands: profile.eqBands, eqQ: profile.eqQ ?? settings.eqQ, stereoWidth: profile.stereoWidth ?? settings.stereoWidth, effectTempo: profile.tempo, effectPitch: profile.pitch, effectReverb: profile.reverb, effectDistortion: profile.distortion, eqPreset: profile.name })
+    if (profile) saveSettings({ eqBands: profile.eqBands, eqFrequencies: profile.eqFrequencies ?? settings.eqFrequencies, eqQ: profile.eqQ ?? settings.eqQ, stereoWidth: profile.stereoWidth ?? settings.stereoWidth, effectTempo: profile.tempo, effectPitch: profile.pitch, effectReverb: profile.reverb, effectDistortion: profile.distortion, eqPreset: profile.name })
   }, [current?.path, current?.genre, current?.artist, settings?.audioProfiles, settings?.audioOutputDeviceId, audioOutputs, saveSettings])
   const fuzzy = useMemo(() => new Fuse(tracks, { keys: ['title','artist','album','genre','folder','path'], threshold: 0.35, ignoreLocation: true }), [tracks])
   const filteredTracks = useMemo(() => globalSearch.trim() ? fuzzy.search(globalSearch).map(x => x.item) : tracks, [globalSearch, fuzzy, tracks])
@@ -685,7 +685,7 @@ export default function App() {
     if (!output) return
     setEditProgress(0)
     try {
-      await window.myriff.exportAudio({ inputPath: input.path, outputPath: output, start: editStart, end: editEnd > editStart ? editEnd : undefined, speed: editSpeed, reverb: editReverb, distortion: editDistortion, eqBands: editEqBands, eqQ: settings?.eqQ, stereoWidth: settings?.stereoWidth, effectChain: settings?.effectChain })
+      await window.myriff.exportAudio({ inputPath: input.path, outputPath: output, start: editStart, end: editEnd > editStart ? editEnd : undefined, speed: editSpeed, reverb: editReverb, distortion: editDistortion, eqBands: editEqBands, eqFrequencies: settings?.eqFrequencies, eqQ: settings?.eqQ, stereoWidth: settings?.stereoWidth, effectChain: settings?.effectChain })
       setEditProgress(null); await refreshTracks(); notify('Edited audio exported as a new file. Your source track was left untouched.')
     } catch (e) { setEditProgress(null); notify(e instanceof Error ? e.message : 'Audio export failed. Check FFmpeg in Settings.') }
   }

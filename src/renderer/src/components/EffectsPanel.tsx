@@ -1,12 +1,29 @@
+import { useState } from 'react'
 import { ArrowDown, ArrowUp, ListOrdered, RotateCcw, SlidersHorizontal, Waves } from 'lucide-react'
 import type { AppSettings, EffectName } from '../../../shared/types'
 
-const frequencies = ['31 Hz','62 Hz','125 Hz','250 Hz','500 Hz','1 kHz','2 kHz','4 kHz','8 kHz','16 kHz']
+const defaultFrequencies = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+const formatFrequency = (value: number) => value >= 1000 ? `${Number((value / 1000).toFixed(2))} kHz` : `${Math.round(value)} Hz`
 const presets: Record<string, number[]> = {
   Flat: [0,0,0,0,0,0,0,0,0,0], Rock: [5,3,2,0,-2,-1,2,4,5,5], Jazz: [3,2,1,2,-1,-1,0,2,3,4], Classical: [4,3,2,1,-1,-1,0,2,3,4], 'Bass Boost': [8,6,4,2,0,0,0,0,0,0], Pop: [-1,2,4,4,1,-1,0,2,3,2], Vocal: [-3,-2,0,2,4,4,3,1,0,-1]
 }
 export default function EffectsPanel({ settings, onChange }: { settings: AppSettings; onChange: (p: Partial<AppSettings>) => void }) {
+  const [frequencyDrafts, setFrequencyDrafts] = useState<Record<number, string>>({})
   const updateBand = (index: number, value: number) => { const next = [...settings.eqBands]; next[index] = value; onChange({ eqBands: next, eqPreset: 'Custom' }) }
+  const updateFrequency = (index: number, value: number) => {
+    const next = [...(settings.eqFrequencies?.length === 10 ? settings.eqFrequencies : defaultFrequencies)]
+    next[index] = Math.max(20, Math.min(20000, Number.isFinite(value) && value > 0 ? value : defaultFrequencies[index]))
+    onChange({ eqFrequencies: next })
+  }
+  const commitFrequency = (index: number) => {
+    const raw = frequencyDrafts[index]
+    if (raw !== undefined) {
+      const value = Number(raw)
+      if (raw.trim() && Number.isFinite(value) && value > 0) updateFrequency(index, value)
+      setFrequencyDrafts(old => { const next = { ...old }; delete next[index]; return next })
+    }
+  }
+  const resetFrequencies = () => { setFrequencyDrafts({}); onChange({ eqFrequencies: [...defaultFrequencies] }) }
   const effectChain: EffectName[] = settings.effectChain?.length ? settings.effectChain : ['eq', 'distortion', 'reverb']
   const effectLabels: Record<EffectName, string> = { eq: '10-band equalizer', distortion: 'Distortion / saturation', reverb: 'Reverb / room' }
   const moveEffect = (index: number, direction: -1 | 1) => {
@@ -18,8 +35,8 @@ export default function EffectsPanel({ settings, onChange }: { settings: AppSett
   }
   return <div className="effects-panel">
     <div className="panel-title-row"><div><span className="eyebrow">PLAYBACK LAB</span><h2>Sound shaping</h2><p className="muted">Effects are applied live while audio plays.</p></div><SlidersHorizontal size={24}/></div>
-    <div className="effects-card"><div className="settings-row"><label>Equalizer preset</label><select value={presets[settings.eqPreset] ? settings.eqPreset : 'Custom'} onChange={e => { const name = e.target.value; onChange({ eqPreset: name, eqBands: presets[name] || settings.eqBands }) }}>{Object.keys(presets).map(p => <option key={p}>{p}</option>)}<option>Custom</option></select><button className="subtle-button" onClick={() => onChange({ eqPreset: 'Flat', eqBands: [...presets.Flat] })}><RotateCcw size={15}/> Reset</button></div>
-      <div className="eq-row">{frequencies.map((f, i) => <label className="eq-band" key={f}><span>{f}</span><input aria-label={`${f} equalizer gain`} type="range" min={-12} max={12} step={0.5} value={settings.eqBands[i] ?? 0} onChange={e => updateBand(i, Number(e.target.value))}/><b>{(settings.eqBands[i] ?? 0) > 0 ? '+' : ''}{settings.eqBands[i] ?? 0}</b></label>)}</div><div className="eq-axis"><span>−12 dB</span><span>0 dB</span><span>+12 dB</span></div>
+    <div className="effects-card"><div className="settings-row"><label>Equalizer preset</label><select value={presets[settings.eqPreset] ? settings.eqPreset : 'Custom'} onChange={e => { const name = e.target.value; onChange({ eqPreset: name, eqBands: presets[name] || settings.eqBands }) }}>{Object.keys(presets).map(p => <option key={p}>{p}</option>)}<option>Custom</option></select><button className="subtle-button" onClick={() => onChange({ eqPreset: 'Flat', eqBands: [...presets.Flat] })}><RotateCcw size={15}/> Reset gain</button><button className="subtle-button" onClick={resetFrequencies}>Reset centres</button></div>
+      <div className="eq-row">{defaultFrequencies.map((fallback, i) => { const frequency = settings.eqFrequencies?.[i] ?? fallback; const label = formatFrequency(frequency); return <label className="eq-band" key={i}><span>{label}</span><input aria-label={`${label} equalizer gain`} type="range" min={-12} max={12} step={0.5} value={settings.eqBands[i] ?? 0} onChange={e => updateBand(i, Number(e.target.value))}/><b>{(settings.eqBands[i] ?? 0) > 0 ? '+' : ''}{settings.eqBands[i] ?? 0}</b><input className="eq-frequency-input" aria-label={`Band ${i + 1} centre frequency in Hz`} title="Centre frequency in Hz (20–20000)" type="number" min={20} max={20000} step={1} value={frequencyDrafts[i] ?? String(frequency)} onChange={e => setFrequencyDrafts(old => ({ ...old, [i]: e.target.value }))} onBlur={() => commitFrequency(i)} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}/></label>})}</div><div className="eq-axis"><span>−12 dB</span><span>0 dB</span><span>+12 dB</span></div>
     </div>
     <div className="effects-card effect-chain-card">
       <div className="effect-chain-header"><div><span className="eyebrow">SIGNAL ROUTING</span><h3><ListOrdered size={16}/> Effect chain</h3><p>Reorder the live DSP graph. Changes apply to the current playback session.</p></div><button className={`subtle-button ${settings.effectsBypass ? 'effect-bypass-active' : ''}`} aria-pressed={settings.effectsBypass} onClick={() => onChange({ effectsBypass: !settings.effectsBypass })}>{settings.effectsBypass ? 'A/B: clean signal' : 'A/B: processed signal'}</button></div>
