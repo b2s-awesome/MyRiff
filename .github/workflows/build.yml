@@ -52,6 +52,7 @@ jobs:
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       prerelease: ${{ steps.meta.outputs.prerelease }}
+      release_id: ${{ steps.create.outputs.id }}
     steps:
       - name: Resolve release tag and channel
         id: meta
@@ -62,6 +63,7 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
       - name: Create draft release at the validated commit
+        id: create
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
@@ -85,7 +87,10 @@ jobs:
             platform: Windows
             script: dist:win
           - os: macos-latest
-            platform: macOS
+            platform: macOS ARM64
+            script: dist:mac
+          - os: macos-15-intel
+            platform: macOS Intel
             script: dist:mac
           - os: ubuntu-latest
             platform: Linux
@@ -123,7 +128,7 @@ jobs:
           RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
         run: gh release upload "$RELEASE_TAG" release/*.exe --clobber
       - name: Upload macOS disk image directly to draft release
-        if: needs.prepare-release.result == 'success' && matrix.platform == 'macOS'
+        if: needs.prepare-release.result == 'success' && startsWith(matrix.platform, 'macOS')
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -145,16 +150,61 @@ jobs:
       needs.build.result == 'success'
     needs: [prepare-release, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: write
     steps:
-      - name: Publish only after every platform build and smoke test passes
+      - name: Verify release assets and publish after all smoke tests pass
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
           RELEASE_PRERELEASE: ${{ needs.prepare-release.outputs.prerelease }}
         run: |
-          release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq .id)"
-          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
-            -F draft=false -F prerelease="$RELEASE_PRERELEASE"
+          set -euo pipefail
+          api="${GITHUB_API_URL:-https://api.github.com}"
+          auth_header="Authorization: Bearer $GH_TOKEN"
+          accept_header="Accept: application/vnd.github+json"
+          version_header="X-GitHub-Api-Version: 2022-11-28"
+
+          if [[ ! "$RELEASE_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::The draft-release action did not provide a valid release ID."
+            exit 1
+          fi
+
+          release_json="$(curl --fail-with-body --silent --show-error \
+            -H "$auth_header" -H "$accept_header" -H "$version_header" \
+            "$api/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"
+          release_tag="$(jq -r '.tag_name // empty' <<< "$release_json")"
+          if [[ "$release_tag" != "$RELEASE_TAG" ]]; then
+            echo "::error::Release ID $RELEASE_ID belongs to '$release_tag', not '$RELEASE_TAG'."
+            exit 1
+          fi
+
+          asset_names="$(jq -r '.assets[].name' <<< "$release_json")"
+          dmg_count="$(grep -Ec '\.dmg$' <<< "$asset_names" || true)"
+          if (( dmg_count < 2 )); then
+            echo "::error::Expected both Apple Silicon and Intel macOS disk images; found $dmg_count."
+            printf '%s\n' "$asset_names"
+            exit 1
+          fi
+          for ext in '.exe' '.dmg' '.AppImage' '.deb' '.tar.gz'; do
+            if ! grep -Fq "$ext" <<< "$asset_names"; then
+              echo "::error::Release $RELEASE_TAG is missing a required $ext package."
+              printf '%s\n' "$asset_names"
+              exit 1
+            fi
+          done
+
+          payload="$(jq -n --arg prerelease "$RELEASE_PRERELEASE" \
+            '{draft: false, prerelease: ($prerelease == "true")}')"
+          published_json="$(curl --fail-with-body --silent --show-error \
+            -X PATCH -H "$auth_header" -H "$accept_header" -H "$version_header" \
+            -H 'Content-Type: application/json' \
+            --data "$payload" "$api/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"
+          if [[ "$(jq -r '.draft' <<< "$published_json")" != "false" ]]; then
+            echo "::error::GitHub did not confirm that release $RELEASE_TAG was published."
+            exit 1
+          fi
+          echo "Published $RELEASE_TAG with $(jq '.assets | length' <<< "$published_json") assets."
