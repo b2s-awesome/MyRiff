@@ -3,6 +3,7 @@ export type ThemeMode = 'dark' | 'light' | 'system'
 export type DownloadFormat = 'mp3' | 'flac' | 'opus'
 export type StreamSource = 'YouTube' | 'YouTube Music' | 'SoundCloud'
 export type VisualizerStyle = 'bars' | 'wave' | 'mirror' | 'spectrum' | 'dots'
+export interface VisualizerLayout { id: string; name: string; style: VisualizerStyle; sensitivity: number; enabled: boolean; createdAt: number }
 export type UiDensity = 'comfortable' | 'compact' | 'cozy'
 export type EffectName = 'eq' | 'distortion' | 'reverb'
 
@@ -184,6 +185,7 @@ export interface AppSettings {
   showVisualizer: boolean
   visualizerStyle: VisualizerStyle
   visualizerSensitivity: number
+  visualizerLayouts: VisualizerLayout[]
   defaultPage: 'library' | 'playlists' | 'search' | 'downloads' | 'playlist-studio' | 'power-tools' | 'radio' | 'editor' | 'lyrics' | 'sound' | 'settings'
   showTrackNumbers: boolean
   showYear: boolean
