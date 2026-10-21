@@ -445,7 +445,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
   ipcMain.handle('backup:import', async () => {
     const result = await showOpenDialog({ title: 'Restore MyRiff backup', properties: ['openFile'], filters: [{ name: 'MyRiff backup', extensions: ['json'] }] })
     if (result.canceled || !result.filePaths[0]) return false
-    const text = await fs.readFile(result.filePaths[0], 'utf8'); restoreBackupObject(JSON.parse(text)); return true
+    const text = await fs.readFile(result.filePaths[0], 'utf8'); restoreBackupObject(JSON.parse(text)); configureGlobalShortcuts(store.getSettings()); return true
   })
   ipcMain.handle('settings-profile:export', async () => {
     const settings = store.getSettings()
@@ -551,7 +551,9 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       patch[key] = value
     }
     if (!Object.keys(patch).length) throw new Error('The profile contained no supported settings.')
-    return store.setSettings(patch as Partial<AppSettings>)
+    const importedSettings = store.setSettings(patch as Partial<AppSettings>)
+    configureGlobalShortcuts(importedSettings)
+    return importedSettings
   })
   ipcMain.handle('library:export-csv', async () => {
     const result = await showSaveDialog({ title: 'Export library inventory', defaultPath: 'MyRiff-Library.csv', filters: [{ name: 'CSV', extensions: ['csv'] }] })
