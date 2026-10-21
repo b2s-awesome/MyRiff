@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — safe metadata export undo
+
+- Added an undo record for single-track and bulk MyRiff-generated tagged copies. Undo verifies that the output is a regular file and matches its recorded size, modification time and SHA-256 before deletion; changed, missing or unverifiable files are skipped. Original source paths are recorded separately and never targeted.
+- Added regression coverage for undo-record validation, database persistence, source-path protection and the renderer/IPC contract.
+
+## Unreleased — release manager and local discovery
+
+- Added an on-demand stable/preview release browser with OS/architecture-aware installer selection and a mandatory local backup before opening an installer. The app does not silently replace its own binaries; older releases still require a manual install.
+- Added optional local spectral/chroma similarity ranking for Local Radio. Audio segments are processed with FFmpeg, bounded for resource use, and cached locally by file identity and feature version; no audio is uploaded.
+- Added strict GitHub host/path validation for release pages and installer links, plus regression coverage for the release flow.
+- Added a private-repository fallback: when anonymous GitHub release metadata returns 404, MyRiff prompts for a local backup before opening Releases in the signed-in browser. No GitHub credentials or tokens are requested or stored by MyRiff.
+
+
 ## Release hardening in progress
 
 - Added a packaged startup smoke-test runner that verifies the renderer root and preload bridge before requiring a clean exit.

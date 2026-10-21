@@ -1,9 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Archive, AudioLines, Bug, CheckCircle2, Download, Keyboard, LayoutGrid, SlidersHorizontal, Sparkles, Trash2, WandSparkles } from 'lucide-react'
-import type { AppSettings, AudioProfile } from '../../../shared/types'
+import { Archive, AudioLines, Bug, CheckCircle2, Download, ExternalLink, Keyboard, LayoutGrid, RefreshCw, SlidersHorizontal, Sparkles, Trash2, WandSparkles } from 'lucide-react'
+import type { AppRelease, AppReleaseCheck, AppSettings, AudioProfile, UpdateChannel } from '../../../shared/types'
 
 type DiagnosticReport = { appVersion: string; platform: string; architecture: string; userDataPath: string; tools: Array<{ name: string; command: string; installed: boolean; version: string }> }
+
+function matchingInstaller(release: AppRelease | undefined, platform: string, arch: string) {
+  if (!release) return undefined
+  const assets = release.assets
+  if (platform === 'win32') return assets.find(asset => /\.exe$/i.test(asset.name))
+  if (platform === 'darwin') {
+    if (arch === 'arm64') return assets.find(asset => /arm64.*\.dmg$/i.test(asset.name)) || assets.find(asset => /\.dmg$/i.test(asset.name))
+    return assets.find(asset => /\.dmg$/i.test(asset.name) && !/arm64/i.test(asset.name)) || assets.find(asset => /\.dmg$/i.test(asset.name))
+  }
+  if (platform === 'linux') return assets.find(asset => /\.AppImage$/i.test(asset.name)) || assets.find(asset => /_amd64\.deb$/i.test(asset.name)) || assets.find(asset => /\.tar\.gz$/i.test(asset.name))
+  return undefined
+}
+
+function formatAssetSize(bytes: number) {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${bytes} B`
+}
 
 export default function AdvancedSettings({ settings, onChange, audioOutputs, trackCount, onNotify }: {
   settings: AppSettings
@@ -20,6 +39,10 @@ export default function AdvancedSettings({ settings, onChange, audioOutputs, tra
   const [backupBusy, setBackupBusy] = useState(false)
   const [capturingShortcut, setCapturingShortcut] = useState<string | null>(null)
   const [capturingGlobalShortcut, setCapturingGlobalShortcut] = useState<string | null>(null)
+  const [releaseCheck, setReleaseCheck] = useState<AppReleaseCheck | null>(null)
+  const [checkingReleases, setCheckingReleases] = useState(false)
+  const [releaseCheckError, setReleaseCheckError] = useState('')
+  const [selectedReleaseTag, setSelectedReleaseTag] = useState('')
   const [calibrationStatus, setCalibrationStatus] = useState('No test tone is playing.')
   const [calibrationBusy, setCalibrationBusy] = useState(false)
   const calibrationRef = useRef<{ context: AudioContext; oscillator: OscillatorNode; timer: number | null } | null>(null)
@@ -99,6 +122,48 @@ export default function AdvancedSettings({ settings, onChange, audioOutputs, tra
     void active.context.close().catch(() => undefined)
     calibrationRef.current = null
   }, [])
+
+  const checkReleases = async () => {
+    setCheckingReleases(true)
+    setReleaseCheckError('')
+    try {
+      const result = await window.myriff.listAppReleases(settings.updateChannel)
+      setReleaseCheck(result)
+      setSelectedReleaseTag(result.releases[0]?.tag || '')
+      if (result.browserAuthRequired) onNotify('MyRiff is private. Save a backup and open Releases in your browser to sign in securely.')
+      else if (!result.releases.length) onNotify(`No ${settings.updateChannel} releases were found.`)
+    } catch (error) {
+      setReleaseCheck(null)
+      setReleaseCheckError(error instanceof Error ? error.message : 'Release check failed.')
+    } finally { setCheckingReleases(false) }
+  }
+  const openRelease = async (url: string) => {
+    try { await window.myriff.openReleaseUrl(url) }
+    catch (error) { onNotify(error instanceof Error ? error.message : 'Could not open the GitHub release.') }
+  }
+  const backUpAndOpenInstaller = async (release: AppRelease, installerUrl: string) => {
+    setBackupBusy(true)
+    try {
+      const backupPath = await window.myriff.exportBackup()
+      if (!backupPath) { onNotify('Release installer not opened because the backup was cancelled.'); return }
+      await window.myriff.openReleaseUrl(installerUrl)
+      onNotify(`Backup saved to ${backupPath}. The ${release.tag} installer was opened in your browser; install it manually after reviewing the release notes.`)
+    } catch (error) { onNotify(error instanceof Error ? error.message : 'Could not prepare the release installer.') }
+    finally { setBackupBusy(false) }
+  }
+
+
+  const backupAndOpenPrivateReleases = async () => {
+    setBackupBusy(true)
+    try {
+      const backupPath = await window.myriff.exportBackup()
+      if (!backupPath) { onNotify('Private Releases were not opened because the backup was cancelled.'); return }
+      await window.myriff.openReleaseUrl('https://github.com/b2s-awesome/MyRiff/releases')
+      onNotify(`Backup saved to ${backupPath}. Sign in to GitHub in your browser, then download the installer matching this PC. MyRiff does not store GitHub credentials.`)
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : 'Could not prepare a backup or open GitHub Releases.')
+    } finally { setBackupBusy(false) }
+  }
 
   const runDiagnostics = async () => {
     setCheckingTools(true)
@@ -216,6 +281,34 @@ export default function AdvancedSettings({ settings, onChange, audioOutputs, tra
       <div className="setting-option"><div><b>Automatically sync saved playlists</b><small>When enabled, MyRiff checks saved sources while the app is running and downloads new items using yt-dlp’s archive. Disabled by default.</small></div><Toggle checked={settings.playlistAutoSync} onChange={v => onChange({ playlistAutoSync: v })}/></div>
       <label className="settings-inline-select"><span>Automatic sync interval</span><select value={settings.playlistSyncIntervalHours} onChange={e => onChange({ playlistSyncIntervalHours: Number(e.target.value) })}><option value={1}>Every hour</option><option value={6}>Every 6 hours</option><option value={12}>Every 12 hours</option><option value={24}>Every 24 hours</option><option value={72}>Every 3 days</option><option value={168}>Every week</option></select></label>
       <p className="footnote">Scheduled sync runs only while MyRiff is open. Saved source URLs are contacted when this option is enabled. yt-dlp retains partial downloads where supported; the archive skips entries already completed.</p>
+    </SettingsCard>
+
+    <SettingsCard icon={<RefreshCw size={18}/>} title="Updates & recovery" description="Check the stable or preview release feed on demand. Version changes are manual; MyRiff backs up your local data before opening an installer.">
+      <div className="settings-form-grid">
+        <label><span>Release channel</span><select value={settings.updateChannel} onChange={e => { const channel = e.target.value as UpdateChannel; void onChange({ updateChannel: channel }).then(() => { setReleaseCheck(null); setSelectedReleaseTag(''); setReleaseCheckError('') }).catch(error => onNotify(error instanceof Error ? error.message : 'Could not save release channel.')) }}><option value="stable">Stable releases only</option><option value="preview">Preview + stable releases</option></select></label>
+        <div className="settings-path"><div><b>{releaseCheck ? `Checked ${new Date(releaseCheck.checkedAt).toLocaleString()}` : 'No release check run'}</b><small>Current app version: {releaseCheck?.appVersion || 'not checked'} · {releaseCheck?.platform || 'platform unknown'} {releaseCheck?.arch || ''}</small></div><button className="secondary-button" disabled={checkingReleases} onClick={checkReleases}><RefreshCw size={15}/>{checkingReleases ? 'Checking…' : 'Check releases'}</button></div>
+      </div>
+      {releaseCheckError && <p className="footnote" role="alert">{releaseCheckError}</p>}
+      {releaseCheck?.browserAuthRequired && <div className="diagnostics-panel">
+        <div className="diagnostics-summary"><b>Sign in to access private releases</b><small>GitHub returned 404 for the private Releases API. This is expected for a private repository; it does not mean MyRiff is broken.</small><small>For security, MyRiff will not ask for or store your GitHub password, personal access token, or session cookie.</small></div>
+        <div className="inline-actions"><button className="secondary-button" disabled={backupBusy} onClick={() => void backupAndOpenPrivateReleases()}><ExternalLink size={15}/>{backupBusy ? 'Preparing backup…' : 'Back up & open private releases'}</button></div>
+        <p className="footnote">After the backup is saved, sign in to GitHub in your browser and choose the installer for this operating system. Review the release notes before installing; upgrades and rollbacks remain manual.</p>
+      </div>}
+      {releaseCheck && !releaseCheck.browserAuthRequired && releaseCheck.releases.length === 0 && <p className="footnote">No releases were found on this channel. Switch to Preview + stable to see preview builds. Release checks contact GitHub only after you press the button.</p>}
+      {releaseCheck && releaseCheck.releases.length > 0 && <>
+        <label className="settings-inline-select"><span>Release to inspect</span><select value={selectedReleaseTag} onChange={e => setSelectedReleaseTag(e.target.value)}>{releaseCheck.releases.map(release => <option key={release.tag} value={release.tag}>{release.name} · {release.tag}{release.prerelease ? ' (preview)' : ''}</option>)}</select></label>
+        {(() => {
+          const selected = releaseCheck.releases.find(release => release.tag === selectedReleaseTag)
+          const installer = matchingInstaller(selected, releaseCheck.platform, releaseCheck.arch)
+          if (!selected) return null
+          return <div className="diagnostics-panel">
+            <div className="diagnostics-summary"><b>{selected.name}</b><small>{selected.tag} · {selected.prerelease ? 'Preview release' : 'Stable release'} · {selected.publishedAt ? new Date(selected.publishedAt).toLocaleDateString() : 'publication date unavailable'}</small><small>{installer ? `Matching installer: ${installer.name} · ${formatAssetSize(installer.size)}` : 'No matching installer was found for this operating system and architecture.'}</small></div>
+            {selected.body && <p className="footnote" style={{whiteSpace:'pre-wrap'}}>{selected.body.slice(0,1600)}{selected.body.length > 1600 ? '…' : ''}</p>}
+            <div className="inline-actions"><button className="ghost-button" onClick={() => void openRelease(selected.url)}><ExternalLink size={15}/> Release notes</button><button className="secondary-button" disabled={!installer || backupBusy} onClick={() => installer && void backUpAndOpenInstaller(selected, installer.url)}><Download size={15}/>{backupBusy ? 'Preparing backup…' : 'Back up & open installer'}</button></div>
+            <p className="footnote">Before installing an older release, keep the backup safe and confirm the release notes. Downloads and installation are opened in your browser and remain under your control; MyRiff does not install or downgrade itself silently.</p>
+          </div>
+        })()}
+      </>}
     </SettingsCard>
 
     <SettingsCard icon={<Archive size={18}/>} title="Privacy, backups & repair" description="Export a local backup, restore it, or collect diagnostics without telemetry or account sign-in.">

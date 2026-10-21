@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import path from 'node:path'
 import fs from 'node:fs'
-import type { AppSettings, PlaybackState, Playlist, PlaylistFolder, Track, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, AudioProfile, DownloadProgress, SavedPlaylistSource, EditorSession } from '../shared/types'
+import type { AppSettings, PlaybackState, Playlist, PlaylistFolder, Track, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, AudioProfile, DownloadProgress, SavedPlaylistSource, EditorSession, MetadataExportEntry, MetadataExportOperation } from '../shared/types'
 
 const defaults: AppSettings = {
   musicFolder: '', theme: 'dark', accent: '#b69cff', dynamicAccent: true, downloadFormat: 'opus', downloadQuality: '0',
@@ -18,7 +18,7 @@ const defaults: AppSettings = {
   globalShortcutsEnabled: true,
   globalKeyboardShortcuts: { playPause: 'MediaPlayPause', next: 'MediaNextTrack', previous: 'MediaPreviousTrack', volumeUp: 'VolumeUp', volumeDown: 'VolumeDown' },
   audioProfiles: [], historyEnabled: true, historyLimit: 500, autoEnrichMetadata: false, metadataProvider: 'musicbrainz',
-  playlistImportMatchThreshold: 0.76, portableMode: false, useSystemTitlebar: false
+  playlistImportMatchThreshold: 0.76, portableMode: false, useSystemTitlebar: false, updateChannel: 'preview'
 }
 
 let db: Database.Database
@@ -87,6 +87,10 @@ export function initDatabase(userDataDir: string) {
     CREATE TABLE IF NOT EXISTS library_roots (path TEXT PRIMARY KEY, watched INTEGER NOT NULL DEFAULT 0, last_scan INTEGER);
     CREATE TABLE IF NOT EXISTS playlist_sources (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, url TEXT NOT NULL UNIQUE, format TEXT NOT NULL DEFAULT 'opus', last_synced INTEGER, created_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS metadata_review_queue (track_path TEXT PRIMARY KEY REFERENCES tracks(path) ON DELETE CASCADE, queued_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS metadata_export_operations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL, description TEXT NOT NULL,
+      entries_json TEXT NOT NULL, undone INTEGER NOT NULL DEFAULT 0
+    );
     CREATE TABLE IF NOT EXISTS editor_sessions (
       track_path TEXT PRIMARY KEY REFERENCES tracks(path) ON DELETE CASCADE,
       start_seconds REAL NOT NULL DEFAULT 0, end_seconds REAL NOT NULL DEFAULT 0,
@@ -320,6 +324,46 @@ export function listMetadataReviewQueue(): string[] {
   return (db.prepare('SELECT track_path FROM metadata_review_queue ORDER BY queued_at, track_path').all() as { track_path: string }[]).map(row => row.track_path)
 }
 export function completeMetadataReview(trackPath: string) { db.prepare('DELETE FROM metadata_review_queue WHERE track_path=?').run(trackPath); return true }
+
+export function recordMetadataExportOperation(description: string, entries: Array<Omit<MetadataExportEntry, 'state' | 'note'>>) {
+  if (!Array.isArray(entries) || entries.length < 1 || entries.length > 1000) throw new Error('A metadata export undo record must contain between 1 and 1,000 files.')
+  if (typeof description !== 'string' || !description.trim() || description.length > 300) throw new Error('Undo description must be text shorter than 300 characters.')
+  const safeEntries: MetadataExportEntry[] = entries.map(entry => {
+    if (!entry || typeof entry.path !== 'string' || typeof entry.sourcePath !== 'string' || !path.isAbsolute(entry.path) || !path.isAbsolute(entry.sourcePath)) throw new Error('Undo records must contain absolute output and source paths.')
+    const outputPath = path.resolve(entry.path)
+    const sourcePath = path.resolve(entry.sourcePath)
+    if (outputPath === sourcePath) throw new Error('A metadata export undo record cannot target its original source file.')
+    if (!Number.isSafeInteger(entry.size) || entry.size < 0 || !Number.isFinite(entry.mtimeMs) || entry.mtimeMs < 0 || !/^[a-f0-9]{64}$/i.test(entry.sha256)) throw new Error('A metadata export undo record contains invalid file identity data.')
+    return { path: outputPath, sourcePath, size: entry.size, mtimeMs: entry.mtimeMs, sha256: entry.sha256.toLowerCase(), state: 'pending' }
+  })
+  const result = db.prepare('INSERT INTO metadata_export_operations(created_at,description,entries_json,undone) VALUES(?,?,?,0)')
+    .run(Date.now(), description.trim(), JSON.stringify(safeEntries))
+  return getMetadataExportOperation(Number(result.lastInsertRowid))
+}
+
+export function getMetadataExportOperation(id: number): MetadataExportOperation | null {
+  if (!Number.isInteger(id) || id < 1) return null
+  const row = db.prepare('SELECT id,created_at,description,entries_json,undone FROM metadata_export_operations WHERE id=?').get(id) as { id:number; created_at:number; description:string; entries_json:string; undone:number } | undefined
+  if (!row) return null
+  try {
+    const entries = JSON.parse(row.entries_json) as MetadataExportEntry[]
+    if (!Array.isArray(entries)) return null
+    return { id: row.id, createdAt: row.created_at, description: row.description, entries, undone: Boolean(row.undone) }
+  } catch { return null }
+}
+
+export function getLatestMetadataExportOperation(): MetadataExportOperation | null {
+  const row = db.prepare('SELECT id FROM metadata_export_operations WHERE undone=0 ORDER BY id DESC LIMIT 1').get() as { id:number } | undefined
+  return row ? getMetadataExportOperation(row.id) : null
+}
+
+export function updateMetadataExportOperation(id: number, entries: MetadataExportEntry[], undone: boolean) {
+  if (!Number.isInteger(id) || id < 1 || !Array.isArray(entries) || entries.length > 1000) throw new Error('Metadata export undo state is invalid.')
+  const tx = db.transaction(() => db.prepare('UPDATE metadata_export_operations SET entries_json=?, undone=? WHERE id=?')
+    .run(JSON.stringify(entries), undone ? 1 : 0, id))
+  tx()
+  return getMetadataExportOperation(id)
+}
 export function checkpointDatabase() { if (db?.open) db.pragma('wal_checkpoint(TRUNCATE)') }
 export function closeDatabase() { if (db?.open) db.close() }
 

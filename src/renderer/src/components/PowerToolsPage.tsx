@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Archive, AudioLines, Bookmark, Check, CheckCircle2, Clock3, Copy, FileSpreadsheet, Heart, ListMusic, LoaderCircle, Music2, Search, ShieldAlert, Sparkles, Star, Trash2, WandSparkles } from 'lucide-react'
-import type { AppSettings, DuplicateGroup, ListeningHistoryItem, MetadataSuggestion, SmartPlaylist, SmartPlaylistRule, Track, TrackBookmark } from '../../../shared/types'
+import type { AppSettings, DuplicateGroup, ListeningHistoryItem, MetadataExportOperation, MetadataSuggestion, SmartPlaylist, SmartPlaylistRule, Track, TrackBookmark } from '../../../shared/types'
 
 const formatTime = (seconds: number) => `${Math.floor(Math.max(0,seconds)/60)}:${String(Math.floor(Math.max(0,seconds)%60)).padStart(2,'0')}`
 
@@ -30,6 +30,7 @@ export default function PowerToolsPage({ tracks, current, position, settings, me
   const [bulkYear, setBulkYear] = useState('')
   const [bulkTitleTemplate, setBulkTitleTemplate] = useState('')
   const [bulkReport, setBulkReport] = useState<{ successes: string[]; failures: Array<{ path: string; error: string }>; folder: string } | null>(null)
+  const [lastMetadataExport, setLastMetadataExport] = useState<MetadataExportOperation | null>(null)
   const [activeTab, setActiveTab] = useState<'library'|'smart'|'metadata'|'history'|'radio'|'bulk'>('library')
   const currentLocal = current && tracks.find(t => t.path === current.path)
   const selectedMetadataTrack = tracks.find(t => t.path === metadataPath)
@@ -61,8 +62,8 @@ export default function PowerToolsPage({ tracks, current, position, settings, me
 
 
   const reload = async () => {
-    const [h,b,s] = await Promise.all([window.myriff.listHistory(120),window.myriff.listBookmarks(),window.myriff.listSmartPlaylists()])
-    setHistory(h); setBookmarks(b); setSmartPlaylists(s)
+    const [h,b,s,lastExport] = await Promise.all([window.myriff.listHistory(120),window.myriff.listBookmarks(),window.myriff.listSmartPlaylists(),window.myriff.getLatestMetadataExport()])
+    setHistory(h); setBookmarks(b); setSmartPlaylists(s); setLastMetadataExport(lastExport)
   }
   useEffect(() => { reload().catch(() => undefined) }, [])
   useEffect(() => { if (!tracks.some(t => t.path === metadataPath)) setMetadataPath(tracks[0]?.path || ''); if (!tracks.some(t => t.path === loudnessPath)) setLoudnessPath(tracks[0]?.path || '') }, [tracks])
@@ -139,7 +140,7 @@ export default function PowerToolsPage({ tracks, current, position, settings, me
   }, [activeTab, metadataPath, settings.autoEnrichMetadata, settings.metadataProvider, getMetadata])
   const exportTaggedCopy = async (suggestion: MetadataSuggestion) => {
     if (!metadataPath) return
-    try { const result = await window.myriff.exportMetadataCopy(metadataPath, suggestion); if (result) { await onRefresh(); onNotify('Metadata-enriched copy exported. The original file was not modified.') } }
+    try { const result = await window.myriff.exportMetadataCopy(metadataPath, suggestion); if (result) { await onRefresh(); await reload(); onNotify('Metadata-enriched copy exported. The original file was not modified; you can undo the latest export from Bulk tag editor.') } }
     catch(e) { onNotify(e instanceof Error ? e.message : 'Could not export metadata-enriched copy.') }
   }
   const bulkVisibleTracks = useMemo(() => {
@@ -154,9 +155,24 @@ export default function PowerToolsPage({ tracks, current, position, settings, me
     try {
       const result = await window.myriff.bulkExportMetadataCopies([...bulkSelected], { artist: bulkArtist.trim() || undefined, album: bulkAlbum.trim() || undefined, year, titleTemplate: bulkTitleTemplate.trim() || undefined })
       if (!result) { onNotify('Bulk tag export cancelled.'); return }
-      setBulkReport(result); setBulkSelected(new Set()); await onRefresh()
+      setBulkReport(result); setBulkSelected(new Set()); await onRefresh(); await reload()
       onNotify(`Exported ${result.successes.length} tagged copies${result.failures.length ? `; ${result.failures.length} failed` : ''}. Original files were not changed.`)
     } catch (error) { onNotify(error instanceof Error ? error.message : 'Bulk tag export failed. Check FFmpeg.') }
+    finally { setWorking('') }
+  }
+  const undoLastMetadataExport = async () => {
+    if (!lastMetadataExport) { onNotify('There is no tagged-copy export available to undo.'); return }
+    const pending = lastMetadataExport.entries.filter(entry => entry.state === 'pending').length
+    if (!pending) { await reload(); onNotify('The latest metadata export has no remaining copies to undo.'); return }
+    const prompt = 'Undo "' + lastMetadataExport.description + '"? MyRiff will delete up to ' + pending + ' generated copies only when their output still matches the recorded size, modification time and SHA-256. Changed, missing or unverifiable files will be left untouched. Original source files are never deleted.'
+    if (settings.confirmDestructiveActions && !window.confirm(prompt)) return
+    setWorking('undo-metadata')
+    try {
+      const result = await window.myriff.undoLastMetadataExport()
+      await onRefresh()
+      await reload()
+      onNotify('Undo finished: ' + result.removedPaths.length + ' generated copy/copies deleted; ' + result.skipped.length + ' left untouched after safety checks.')
+    } catch (error) { onNotify(error instanceof Error ? error.message : 'Could not undo the last metadata export.') }
     finally { setWorking('') }
   }
   const analyseLoudness = async () => {
@@ -208,6 +224,7 @@ export default function PowerToolsPage({ tracks, current, position, settings, me
         <div className="bulk-track-toolbar"><input value={bulkSearch} onChange={e=>setBulkSearch(e.target.value)} placeholder="Filter library tracks…"/><span>{bulkSelected.size} selected · {bulkVisibleTracks.length} matching shown (max 500)</span><button className="secondary-button" onClick={()=>setBulkSelected(old=>{const next=new Set(old); const all=bulkVisibleTracks.every(t=>next.has(t.path)); bulkVisibleTracks.forEach(t=>all?next.delete(t.path):next.add(t.path)); return next})}>{bulkVisibleTracks.length && bulkVisibleTracks.every(t=>bulkSelected.has(t.path))?'Deselect visible':'Select visible'}</button></div>
         <div className="bulk-track-list">{bulkVisibleTracks.map(track=><label className="bulk-track-row" key={track.path}><input type="checkbox" checked={bulkSelected.has(track.path)} onChange={event=>setBulkSelected(old=>{const next=new Set(old); if(event.target.checked)next.add(track.path);else next.delete(track.path);return next})}/><span><b>{track.title}</b><small>{track.artist || 'Unknown artist'} · {track.album || 'Unknown album'}</small><code>{track.path}</code></span></label>)}</div>
         <div className="health-actions"><button className="primary-button" disabled={!bulkSelected.size||working==='bulk-tags'} onClick={runBulkTagExport}>{working==='bulk-tags'?<LoaderCircle size={15} className="spin"/>:<FileSpreadsheet size={15}/>} Export {bulkSelected.size} tagged copies</button><span className="muted">FFmpeg required · source files are never overwritten</span></div>
+        {lastMetadataExport&&<div className="metadata-undo-card"><div><b>Latest generated-copy export</b><small>{lastMetadataExport.description} · {lastMetadataExport.entries.filter(entry=>entry.state==='pending').length} file(s) eligible for verification · {new Date(lastMetadataExport.createdAt).toLocaleString()}</small><small>Undo deletes only unchanged generated copies and removes their MyRiff library references. Original source files remain untouched.</small></div><button className="secondary-button" disabled={working==='undo-metadata'||!lastMetadataExport.entries.some(entry=>entry.state==='pending')} onClick={undoLastMetadataExport}>{working==='undo-metadata'?<LoaderCircle size={15} className="spin"/>:<Archive size={15}/>} Undo last export</button></div>}
         {bulkReport&&<div className="import-report"><CheckCircle2 size={18}/><div><b>{bulkReport.successes.length} copies exported to {bulkReport.folder}</b><span>{bulkReport.failures.length?`${bulkReport.failures.length} files failed; expand to inspect.`:'All selected tracks were exported.'}</span>{bulkReport.failures.length>0&&<details><summary>View failures</summary><div className="missing-list">{bulkReport.failures.map((failure,i)=><span key={`${failure.path}-${i}`}>{failure.path}: {failure.error}</span>)}</div></details>}</div></div>}
         <p className="footnote">MyRiff writes new copies with FFmpeg stream-copy metadata edits, then indexes the output folder. Existing files are not overwritten. Some container/codec combinations may reject tag updates; failures are reported per track.</p>
       </section>

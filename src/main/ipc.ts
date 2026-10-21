@@ -1,9 +1,10 @@
 import { app, ipcMain, dialog, shell, BrowserWindow, powerSaveBlocker, type OpenDialogOptions, type SaveDialogOptions } from 'electron'
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
 import path from 'node:path'
-import type { AppSettings, EditorRequest, EditorSession, PlaybackState, StreamSource, DownloadFormat } from '../shared/types'
+import type { AppSettings, AppRelease, AppReleaseAsset, AppReleaseCheck, EditorRequest, EditorSession, MetadataExportEntry, MetadataExportUndoResult, PlaybackState, StreamSource, DownloadFormat, UpdateChannel } from '../shared/types'
 import * as store from './db'
 import { scanMusicFolder } from './library'
 import { startDownload, searchStreams, streamUrl, importRemotePlaylist, previewRemotePlaylist, cancelDownload, pauseDownload } from './streaming'
@@ -26,6 +27,24 @@ let stopLibraryWatch: (() => Promise<void>) | null = null
 let watcherRoot = ''
 let playlistSchedulerTimer: ReturnType<typeof setInterval> | null = null
 const scheduledPlaylistSources = new Set<number>()
+
+async function sha256File(filePath: string): Promise<string> {
+  return new Promise((resolveHash, rejectHash) => {
+    const hash = createHash('sha256')
+    const stream = fsSync.createReadStream(filePath)
+    stream.on('data', chunk => hash.update(chunk))
+    stream.once('error', rejectHash)
+    stream.once('end', () => resolveHash(hash.digest('hex')))
+  })
+}
+
+function isAllowedGitHubReleaseUrl(url: URL, allowDownload: boolean) {
+  if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.username || url.password) return false
+  const parts = url.pathname.split('/').filter(Boolean)
+  if (parts[0] !== 'b2s-awesome' || parts[1] !== 'MyRiff' || parts[2] !== 'releases') return false
+  if (allowDownload) return parts.length >= 6 && parts[3] === 'download' && Boolean(parts[4]) && Boolean(parts[5])
+  return parts.length === 3 || (parts.length === 5 && parts[3] === 'tag' && Boolean(parts[4]))
+}
 async function indexDownloadedFile(filePath: string) {
   try { await scanMusicFolder(path.dirname(filePath)) }
   catch (error) { console.warn('Downloaded file metadata scan failed:', error) }
@@ -161,6 +180,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
   ipcMain.handle('settings:get', async () => { const settings = store.getSettings(); await configureWatcher(settings); return settings })
   ipcMain.handle('settings:set', async (_e, patch: Partial<AppSettings>) => {
     const before = store.getSettings()
+    if (patch.updateChannel !== undefined && patch.updateChannel !== 'stable' && patch.updateChannel !== 'preview') throw new Error('Update channel must be stable or preview.')
     if (patch.eqQ !== undefined && (!Number.isFinite(patch.eqQ) || patch.eqQ < 0.3 || patch.eqQ > 8)) throw new Error('EQ bandwidth must be between 0.3 and 8.')
     if (patch.eqFrequencies !== undefined && (!Array.isArray(patch.eqFrequencies) || patch.eqFrequencies.length !== 10 || patch.eqFrequencies.some(v => typeof v !== 'number' || !Number.isFinite(v) || v < 20 || v > 20000))) throw new Error('EQ centre frequencies must contain ten values between 20 and 20000 Hz.')
     if (patch.stereoWidth !== undefined && (!Number.isFinite(patch.stereoWidth) || patch.stereoWidth < 0 || patch.stereoWidth > 2)) throw new Error('Stereo width must be between 0 and 2.')
@@ -329,6 +349,9 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     const result = await showSaveDialog({ title: 'Export metadata-enriched copy', defaultPath, filters: [{ name: 'Audio file', extensions: [ext.replace(/^\./, '')] }] })
     if (result.canceled || !result.filePath) return false
     await exportMetadataTaggedCopy(track.path, result.filePath, suggestion, store.getSettings())
+    const outputStat = await fs.stat(result.filePath)
+    const outputHash = await sha256File(result.filePath)
+    store.recordMetadataExportOperation('Metadata-enriched tagged copy', [{ path: result.filePath, sourcePath: track.path, size: outputStat.size, mtimeMs: outputStat.mtimeMs, sha256: outputHash }])
     return result.filePath
   })
   ipcMain.handle('metadata:bulk-export-copies', async (_e, trackPaths: string[], overrides: { artist?: string; album?: string; year?: number | null; titleTemplate?: string }) => {
@@ -342,6 +365,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     const settings = store.getSettings()
     const tracks = new Map(store.listTracks().map(track => [track.path, track]))
     const successes: string[] = []
+    const undoEntries: Array<Omit<MetadataExportEntry, 'state' | 'note'>> = []
     const failures: Array<{ path: string; error: string }> = []
     const used = new Set<string>()
     for (const trackPath of [...new Set(trackPaths)]) {
@@ -355,14 +379,86 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       used.add(outputPath.toLowerCase())
       const title = overrides.titleTemplate?.trim() ? overrides.titleTemplate.replace(/\{(title|artist|album|year)\}/gi, (_match, key: string) => String(({ title: track.title, artist: track.artist, album: track.album, year: track.year ?? '' } as Record<string, string | number>)[key.toLowerCase()] ?? '')).slice(0, 300) : track.title
       const tags = { title, artist: overrides.artist?.trim() || track.artist, album: overrides.album?.trim() || track.album, year: overrides.year ?? track.year }
-      try { await exportMetadataTaggedCopy(track.path, outputPath, tags, settings); successes.push(outputPath) }
-      catch (error) { failures.push({ path: track.path, error: error instanceof Error ? error.message : String(error) }) }
+      try {
+        await exportMetadataTaggedCopy(track.path, outputPath, tags, settings)
+        const outputStat = await fs.stat(outputPath)
+        const outputHash = await sha256File(outputPath)
+        undoEntries.push({ path: outputPath, sourcePath: track.path, size: outputStat.size, mtimeMs: outputStat.mtimeMs, sha256: outputHash })
+        successes.push(outputPath)
+      } catch (error) { failures.push({ path: track.path, error: error instanceof Error ? error.message : String(error) }) }
     }
-    if (successes.length) { try { await scanMusicFolder(outputFolder) } catch (error) { console.warn('Bulk tagged-copy indexing deferred:', error) } }
-    return { folder: outputFolder, successes, failures }
+    if (successes.length) {
+      if (undoEntries.length) store.recordMetadataExportOperation(`Bulk tagged-copy export (${successes.length} files)`, undoEntries)
+      try { await scanMusicFolder(outputFolder) } catch (error) { console.warn('Bulk tagged-copy indexing deferred:', error) }
+    }
+    return { folder: outputFolder, successes, failures, undoTracked: undoEntries.length }
   })
   ipcMain.handle('metadata:review-queue', () => store.listMetadataReviewQueue())
   ipcMain.handle('metadata:review-complete', (_e, trackPath: string) => store.completeMetadataReview(String(trackPath || '')))
+
+  ipcMain.handle('metadata:latest-export', () => store.getLatestMetadataExportOperation())
+  ipcMain.handle('metadata:undo-last-export', async (): Promise<MetadataExportUndoResult> => {
+    const operation = store.getLatestMetadataExportOperation()
+    if (!operation) return { operationId: null, description: null, removedPaths: [], skipped: [] }
+    const entries: MetadataExportEntry[] = operation.entries.map(entry => ({ ...entry }))
+    const removedPaths: string[] = []
+    const skipped: Array<{ path: string; reason: string }> = []
+    const markSkipped = (entry: MetadataExportEntry, reason: string) => {
+      entry.state = 'skipped'
+      entry.note = reason
+      skipped.push({ path: entry.path, reason })
+    }
+    for (const entry of entries) {
+      if (entry.state !== 'pending') continue
+      const outputPath = path.resolve(entry.path)
+      const sourcePath = path.resolve(entry.sourcePath)
+      if (!path.isAbsolute(entry.path) || !path.isAbsolute(entry.sourcePath) || outputPath === sourcePath) {
+        markSkipped(entry, 'Invalid path or output path matches original source.')
+        continue
+      }
+      let fileInfo
+      try { fileInfo = await fs.lstat(outputPath) } catch {
+        markSkipped(entry, 'File is missing; nothing was deleted.')
+        continue
+      }
+      if (!fileInfo.isFile() || fileInfo.isSymbolicLink()) {
+        markSkipped(entry, 'Path is no longer a regular file; nothing was deleted.')
+        continue
+      }
+      if (fileInfo.size !== entry.size || Math.abs(fileInfo.mtimeMs - entry.mtimeMs) > 3) {
+        markSkipped(entry, 'File size or modification time changed after export; left untouched.')
+        continue
+      }
+      let currentHash = ''
+      try { currentHash = await sha256File(outputPath) } catch {
+        markSkipped(entry, 'Could not verify file contents; left untouched.')
+        continue
+      }
+      if (currentHash !== entry.sha256) {
+        markSkipped(entry, 'File contents changed after export; left untouched.')
+        continue
+      }
+      const finalInfo = await fs.lstat(outputPath).catch(() => null)
+      if (!finalInfo || !finalInfo.isFile() || finalInfo.isSymbolicLink() || finalInfo.dev !== fileInfo.dev || finalInfo.ino !== fileInfo.ino || finalInfo.size !== entry.size || Math.abs(finalInfo.mtimeMs - entry.mtimeMs) > 3) {
+        markSkipped(entry, 'File changed during verification; left untouched.')
+        continue
+      }
+      try {
+        await fs.unlink(outputPath)
+        entry.state = 'removed'
+        entry.note = 'Verified generated copy deleted.'
+        removedPaths.push(outputPath)
+      } catch (error) {
+        markSkipped(entry, `Could not delete file: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    const indexedCopies = removedPaths.filter(filePath => store.isKnownTrack(filePath))
+    if (indexedCopies.length) store.removeTracks(indexedCopies)
+    store.updateMetadataExportOperation(operation.id, entries, true)
+    const target = win()
+    if (target && !target.isDestroyed()) target.webContents.send('library:updated', store.listTracks())
+    return { operationId: operation.id, description: operation.description, removedPaths, skipped }
+  })
   ipcMain.handle('metadata:search', (_e, trackPath: string) => {
     const settings = store.getSettings()
     if (settings.metadataProvider === 'off') throw new Error('Metadata lookup is disabled in Settings.')
@@ -439,6 +535,68 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     return { playlistId: playlist.id, playlistName: uniqueName, total: entries.length, found: matched.length, missing }
   })
   ipcMain.handle('external:open-tunemymusic', async () => { await shell.openExternal('https://www.tunemymusic.com/'); return true })
+
+  ipcMain.handle('updates:list', async (_e, requestedChannel: unknown): Promise<AppReleaseCheck> => {
+    if (requestedChannel !== 'stable' && requestedChannel !== 'preview') throw new Error('Choose either the stable or preview release channel.')
+    const channel = requestedChannel as UpdateChannel
+    const response = await fetch('https://api.github.com/repos/b2s-awesome/MyRiff/releases?per_page=30', {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'MyRiff-Release-Checker' },
+      signal: AbortSignal.timeout(12_000)
+    }).catch(error => { throw new Error(`Could not reach GitHub Releases: ${error instanceof Error ? error.message : 'network error'}`) })
+    if (!response.ok) {
+      if (response.status === 404) {
+        return { appVersion: app.getVersion(), platform: process.platform, arch: process.arch, channel, checkedAt: new Date().toISOString(), releases: [], browserAuthRequired: true }
+      }
+      if (response.status === 403 || response.status === 429) throw new Error('GitHub rate-limited the release check. Wait a little and try again.')
+      throw new Error(`GitHub Releases returned HTTP ${response.status}.`)
+    }
+    const payload = await response.json() as Array<{
+      tag_name?: unknown; name?: unknown; body?: unknown; published_at?: unknown; draft?: unknown
+      prerelease?: unknown; html_url?: unknown; assets?: unknown
+    }>
+    const safeReleaseUrl = (value: unknown, allowDownload: boolean): string | null => {
+      if (typeof value !== 'string') return null
+      try {
+        const url = new URL(value)
+        return isAllowedGitHubReleaseUrl(url, allowDownload) ? url.href : null
+      } catch { return null }
+    }
+    const releases: AppRelease[] = []
+    for (const record of payload) {
+      if (record.draft === true || (channel === 'stable' && record.prerelease === true)) continue
+      const tag = typeof record.tag_name === 'string' ? record.tag_name : ''
+      const url = safeReleaseUrl(record.html_url, false)
+      if (!tag || !/^[A-Za-z0-9._-]{1,100}$/.test(tag) || !url) continue
+      const rawAssets = Array.isArray(record.assets) ? record.assets as Array<{name?: unknown; size?: unknown; browser_download_url?: unknown}> : []
+      const assets: AppReleaseAsset[] = rawAssets.slice(0, 100).flatMap(asset => {
+        const assetUrl = safeReleaseUrl(asset.browser_download_url, true)
+        const name = typeof asset.name === 'string' ? asset.name.slice(0, 240) : ''
+        if (!assetUrl || !name || name.includes('..') || /[\\/]/.test(name)) return []
+        return [{ name, url: assetUrl, size: typeof asset.size === 'number' && Number.isFinite(asset.size) ? Math.max(0, asset.size) : 0 }]
+      })
+      releases.push({
+        tag,
+        name: (typeof record.name === 'string' && record.name.trim() ? record.name : tag).slice(0, 200),
+        body: typeof record.body === 'string' ? record.body.slice(0, 4000) : '',
+        publishedAt: typeof record.published_at === 'string' ? record.published_at : null,
+        prerelease: record.prerelease === true,
+        url,
+        assets
+      })
+      if (releases.length >= 20) break
+    }
+    return { appVersion: app.getVersion(), platform: process.platform, arch: process.arch, channel, checkedAt: new Date().toISOString(), releases, browserAuthRequired: false }
+  })
+  ipcMain.handle('updates:open-url', async (_e, rawUrl: unknown) => {
+    if (typeof rawUrl !== 'string') throw new Error('A valid GitHub release URL is required.')
+    let url: URL
+    try { url = new URL(rawUrl) } catch { throw new Error('A valid GitHub release URL is required.') }
+    if (!isAllowedGitHubReleaseUrl(url, false) && !isAllowedGitHubReleaseUrl(url, true)) {
+      throw new Error('For safety, MyRiff only opens validated release pages or installer assets hosted on its GitHub release page.')
+    }
+    await shell.openExternal(url.href)
+    return true
+  })
   ipcMain.handle('backup:export', async () => {
     const result = await showSaveDialog({ title: 'Export MyRiff backup', defaultPath: `MyRiff-Backup-${new Date().toISOString().slice(0,10)}.json`, filters: [{ name: 'MyRiff backup', extensions: ['json'] }] })
     if (result.canceled || !result.filePath) return false

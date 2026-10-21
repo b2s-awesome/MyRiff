@@ -4,6 +4,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { createHash } from 'node:crypto'
 import * as ts from 'typescript'
 
 const requireFromProject = createRequire(path.join(process.cwd(), 'package.json'))
@@ -260,6 +261,52 @@ test('SQLite integration: acoustic similarity cache is versioned and invalidated
     assert.equal(api.getAcousticFingerprint(trackPath, modifiedAt, fileSize).length, 176)
   } finally {
     try { api.closeDatabase() } catch { /* close only if database initialisation succeeded */ }
+    await fs.rm(tempRoot, { recursive: true, force: true })
+  }
+})
+
+test('SQLite integration: metadata export undo records are validated and survive database reopen', async () => {
+  const api = await loadDatabaseModule()
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'myriff-metadata-undo-'))
+  const userData = path.join(tempRoot, 'user-data')
+  const sourcePath = path.join(tempRoot, 'source.flac')
+  const outputPath = path.join(tempRoot, 'source - tagged.flac')
+  try {
+    await fs.writeFile(sourcePath, 'original source audio placeholder')
+    const outputBytes = Buffer.from('generated tagged copy placeholder')
+    await fs.writeFile(outputPath, outputBytes)
+    const stat = await fs.stat(outputPath)
+    const sha256 = createHash('sha256').update(outputBytes).digest('hex')
+    api.initDatabase(userData)
+
+    assert.throws(() => api.recordMetadataExportOperation('unsafe source target', [{
+      path: sourcePath, sourcePath, size: stat.size, mtimeMs: stat.mtimeMs, sha256
+    }]), /cannot target its original source/)
+    assert.equal(api.getLatestMetadataExportOperation(), null)
+
+    const operation = api.recordMetadataExportOperation('test tagged copy', [{
+      path: outputPath, sourcePath, size: stat.size, mtimeMs: stat.mtimeMs, sha256
+    }])
+    assert.ok(operation)
+    assert.equal(operation.description, 'test tagged copy')
+    assert.equal(operation.entries.length, 1)
+    assert.equal(operation.entries[0].state, 'pending')
+    assert.deepEqual(api.getLatestMetadataExportOperation(), operation)
+
+    const completed = api.updateMetadataExportOperation(operation.id, [
+      { ...operation.entries[0], state: 'removed', note: 'Verified generated copy deleted.' }
+    ], true)
+    assert.equal(completed.undone, true)
+    assert.equal(api.getLatestMetadataExportOperation(), null)
+    assert.equal(api.getMetadataExportOperation(operation.id).entries[0].state, 'removed')
+
+    api.closeDatabase()
+    api.initDatabase(userData)
+    assert.equal(api.getMetadataExportOperation(operation.id).undone, true)
+    assert.equal(await fs.readFile(sourcePath, 'utf8'), 'original source audio placeholder')
+    assert.equal(await fs.readFile(outputPath, 'utf8'), 'generated tagged copy placeholder')
+  } finally {
+    try { api.closeDatabase() } catch { /* close only if initialisation succeeded */ }
     await fs.rm(tempRoot, { recursive: true, force: true })
   }
 })

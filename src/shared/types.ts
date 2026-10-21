@@ -6,6 +6,60 @@ export type VisualizerStyle = 'bars' | 'wave' | 'mirror' | 'spectrum' | 'dots'
 export interface VisualizerLayout { id: string; name: string; style: VisualizerStyle; sensitivity: number; enabled: boolean; createdAt: number }
 export type UiDensity = 'comfortable' | 'compact' | 'cozy'
 export type EffectName = 'eq' | 'distortion' | 'reverb'
+export type UpdateChannel = 'stable' | 'preview'
+
+export interface AppReleaseAsset {
+  name: string
+  url: string
+  size: number
+}
+
+export interface AppRelease {
+  tag: string
+  name: string
+  body: string
+  publishedAt: string | null
+  prerelease: boolean
+  url: string
+  assets: AppReleaseAsset[]
+}
+
+export interface AppReleaseCheck {
+  appVersion: string
+  platform: string
+  arch: string
+  channel: UpdateChannel
+  checkedAt: string
+  releases: AppRelease[]
+  browserAuthRequired: boolean
+}
+
+export type MetadataExportEntryState = 'pending' | 'removed' | 'skipped'
+
+export interface MetadataExportEntry {
+  path: string
+  sourcePath: string
+  size: number
+  mtimeMs: number
+  sha256: string
+  state: MetadataExportEntryState
+  note?: string
+}
+
+export interface MetadataExportOperation {
+  id: number
+  createdAt: number
+  description: string
+  entries: MetadataExportEntry[]
+  undone: boolean
+}
+
+export interface MetadataExportUndoResult {
+  operationId: number | null
+  description: string | null
+  removedPaths: string[]
+  skipped: Array<{ path: string; reason: string }>
+}
 
 export interface Track {
   path: string
@@ -211,6 +265,7 @@ export interface AppSettings {
   playlistImportMatchThreshold: number
   portableMode: boolean
   useSystemTitlebar: boolean
+  updateChannel: UpdateChannel
 }
 
 export interface PlaybackState {
