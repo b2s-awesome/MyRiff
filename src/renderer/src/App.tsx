@@ -8,7 +8,7 @@ import {
   Trash2, Upload, X, Pencil, RefreshCw, Heart, Disc3, Music, ArrowUpRight, ExternalLink,
   WandSparkles, History, Star, AudioWaveform, Keyboard, Bookmark, Archive, CheckCircle2
 } from 'lucide-react'
-import type { AppSettings, DownloadProgress, LyricsResult, LyricLine, Playlist, PlaylistFolder, SearchResult, StreamSource, Track, PlaybackState } from '../../shared/types'
+import type { AppSettings, DownloadProgress, LyricsResult, LyricLine, Playlist, PlaylistFolder, SearchResult, StreamSource, Track, PlaybackState, VisualizerLayout } from '../../shared/types'
 import TrackGrid from './components/TrackGrid'
 import PlayerBar from './components/PlayerBar'
 import EffectsPanel from './components/EffectsPanel'
@@ -92,6 +92,7 @@ export default function App() {
   const [editEqBands, setEditEqBands] = useState<number[]>(Array(10).fill(0))
   const [editProgress, setEditProgress] = useState<number|null>(null)
   const [editorSessionStatus, setEditorSessionStatus] = useState('Choose a local track to edit.')
+  const [visualizerLayoutName, setVisualizerLayoutName] = useState('')
   const editorSessionReadyPathRef = useRef('')
   const editorSessionSaveTokenRef = useRef(0)
   const [lyrics, setLyrics] = useState<LyricsResult | null>(null)
@@ -122,6 +123,35 @@ export default function App() {
       notify(e instanceof Error ? e.message : 'Could not save settings.')
     }
   }, [notify])
+
+  const saveVisualizerLayout = useCallback(async () => {
+    const name = visualizerLayoutName.trim().slice(0, 48)
+    if (!name || !settings) { notify('Enter a name for this visualiser layout.'); return }
+    const layout: VisualizerLayout = {
+      id: window.crypto.randomUUID(),
+      name,
+      style: settings.visualizerStyle,
+      sensitivity: settings.visualizerSensitivity,
+      enabled: settings.showVisualizer,
+      createdAt: Date.now()
+    }
+    const layouts = [...(settings.visualizerLayouts || []).filter(item => item.name.toLocaleLowerCase() !== name.toLocaleLowerCase()), layout].slice(-30)
+    await saveSettings({ visualizerLayouts: layouts })
+    setVisualizerLayoutName('')
+    notify(`Saved visualiser layout “${name}”.`)
+  }, [visualizerLayoutName, settings, saveSettings, notify])
+
+  const applyVisualizerLayout = useCallback(async (layout: VisualizerLayout) => {
+    await saveSettings({ visualizerStyle: layout.style, visualizerSensitivity: layout.sensitivity, showVisualizer: layout.enabled })
+    notify(`Applied visualiser layout “${layout.name}”.`)
+  }, [saveSettings, notify])
+
+  const deleteVisualizerLayout = useCallback(async (layoutId: string) => {
+    if (!settings) return
+    const layouts = (settings.visualizerLayouts || []).filter(item => item.id !== layoutId)
+    await saveSettings({ visualizerLayouts: layouts })
+    notify('Visualiser layout deleted.')
+  }, [settings, saveSettings, notify])
 
   const refreshPlaylists = useCallback(async () => {
     const [latestPlaylists, latestFolders] = await Promise.all([window.myriff.listPlaylists(), window.myriff.listPlaylistFolders()])
@@ -992,7 +1022,7 @@ export default function App() {
 
         {page === 'lyrics' && <div className="lyrics-page"><div className="lyrics-toolbar"><div><span className="eyebrow">LYRICS STUDIO</span><h2>{current?.title || 'Nothing playing yet'}</h2><p>{current?.artist || 'Play a track to fetch lyrics or import an LRC file.'}</p></div><div className="lyrics-actions"><button className={karaokeMode ? 'secondary-button active' : 'secondary-button'} onClick={() => setKaraokeMode(v => !v)} title="Use word timestamps from Enhanced LRC files when present; otherwise estimate timing">{karaokeMode ? 'Karaoke preview: on' : 'Karaoke preview'}</button><button className="secondary-button" onClick={importLyrics}><Upload size={15}/> Import LRC</button><button className="primary-button" onClick={fetchLyrics} disabled={!current || lyricsBusy}>{lyricsBusy ? <LoaderCircle size={15} className="spin"/> : <Search size={15}/>} Find lyrics</button></div></div><div className="lyrics-card"><div className="lyrics-card-header"><div><AudioLines size={19}/><span>{lyrics?.provider || 'Lyrics'}</span></div><span className="lyrics-sync-status">{lyricStatus || (lyrics?.synced ? 'Synced' : 'Not timed')}</span></div>{lyricLines.length ? <div className="lyrics-lines">{lyricLines.map((line,i)=>{ const active = line.time !== null && position >= line.time && (i === lyricLines.length-1 || lyricLines[i+1].time === null || position < (lyricLines[i+1].time ?? Infinity)); return <div key={`${i}-${line.text}`} className={`lyric-line ${active?'active':''}`}><button title="Set this line to the current playback position" className="line-time" onClick={() => { const lines=[...lyricLines]; lines[i]=retimeLyricLine(line,position); saveLyricTiming(lines) }}>{line.time === null ? '––:––' : timeLabel(line.time)}</button><button className={`lyric-text ${karaokeMode && line.time !== null ? 'karaoke-enabled' : ''}`} onClick={() => { if(line.time!==null && audioRef.current) audioRef.current.currentTime=line.time }}>{karaokeMode && line.time !== null ? (line.words?.length ? renderTimedKaraokeWords(line.words, position) : renderKaraokeWords(line.text, Math.max(0, Math.min(1, (position - line.time) / Math.max(.25, ((lyricLines.slice(i+1).find(next => next.time !== null)?.time ?? line.time + 4) - line.time)))))) : line.text}</button><button className="line-set" title="Time this line now" onClick={() => { const lines=[...lyricLines]; lines[i]=retimeLyricLine(line,position); saveLyricTiming(lines) }}><Check size={14}/></button></div>})}</div> : <div className="lyrics-empty"><div className="lyrics-decoration"><AudioLines size={36}/></div><h3>Words make the music</h3><p>Fetch online lyrics with LRCLIB, or import a local .lrc file. Click any line's timestamp to set it to the current playback position.</p><button className="primary-button" onClick={fetchLyrics} disabled={!current || lyricsBusy}><Search size={15}/> Find lyrics</button><button className="ghost-button" onClick={importLyrics}><Upload size={15}/> Import LRC</button></div>}{lyricLines.length > 0 && <div className="lyrics-bottom"><span>{lyricLines.length} lines · click a timestamp to set timing</span><button className="secondary-button" onClick={autoTimeLyrics} disabled={lyricsBusy}><Sparkles size={15}/> Auto-time (approx.)</button><button className="ghost-button" onClick={()=>saveLyricTiming(lyricLines.map(l=>({...l,time:null,words:undefined})))}>Clear timing</button></div>}</div></div>}
 
-        {page === 'sound' && <div className="page-stack sound-page"><EffectsPanel settings={settings} onChange={saveSettings}/><section className="content-card visualizer-card"><div className="section-heading compact"><div><h2>Live visualiser</h2><p>Audio-reactive display built from the local Web Audio analyser.</p></div><select value={settings.visualizerStyle} onChange={e=>saveSettings({visualizerStyle:e.target.value as AppSettings['visualizerStyle']})}><option value="bars">Bars</option><option value="wave">Wave</option><option value="mirror">Mirror</option><option value="spectrum">Spectrum</option><option value="dots">Dots</option></select></div><Visualizer analyser={analyser.current} style={settings.visualizerStyle} sensitivity={settings.visualizerSensitivity} active={settings.showVisualizer && playing}/><div className="setting-option"><div><b>Visualiser enabled</b><small>Animate only while music is playing.</small></div><Toggle checked={settings.showVisualizer} onChange={v=>saveSettings({showVisualizer:v})}/></div><label className="slider-setting"><span>Sensitivity</span><input type="range" min={0.25} max={2.5} step={0.05} value={settings.visualizerSensitivity} onChange={e=>saveSettings({visualizerSensitivity:Number(e.target.value)})}/><b>{settings.visualizerSensitivity.toFixed(2)}×</b></label></section></div>}
+        {page === 'sound' && <div className="page-stack sound-page"><EffectsPanel settings={settings} onChange={saveSettings}/><section className="content-card visualizer-card"><div className="section-heading compact"><div><h2>Live visualiser</h2><p>Audio-reactive display built from the local Web Audio analyser.</p></div><select value={settings.visualizerStyle} onChange={e=>saveSettings({visualizerStyle:e.target.value as AppSettings['visualizerStyle']})}><option value="bars">Bars</option><option value="wave">Wave</option><option value="mirror">Mirror</option><option value="spectrum">Spectrum</option><option value="dots">Dots</option></select></div><Visualizer analyser={analyser.current} style={settings.visualizerStyle} sensitivity={settings.visualizerSensitivity} active={settings.showVisualizer && playing}/><div className="setting-option"><div><b>Visualiser enabled</b><small>Animate only while music is playing.</small></div><Toggle checked={settings.showVisualizer} onChange={v=>saveSettings({showVisualizer:v})}/></div><label className="slider-setting"><span>Sensitivity</span><input type="range" min={0.25} max={2.5} step={0.05} value={settings.visualizerSensitivity} onChange={e=>saveSettings({visualizerSensitivity:Number(e.target.value)})}/><b>{settings.visualizerSensitivity.toFixed(2)}×</b></label><div className="visualizer-layout-manager"><div className="visualizer-layout-manager-heading"><div><b>Saved visualiser layouts</b><small>Save the current style, sensitivity and enabled state. Layouts stay on this device.</small></div></div><div className="visualizer-layout-save"><input aria-label="Visualiser layout name" className="visualizer-layout-name" maxLength={48} value={visualizerLayoutName} placeholder="Name this layout…" onChange={e=>setVisualizerLayoutName(e.target.value)}/><button className="secondary-button" onClick={()=>void saveVisualizerLayout()}>Save layout</button></div>{(settings.visualizerLayouts || []).length ? <div className="visualizer-layout-list">{settings.visualizerLayouts.map(layout=><div className="visualizer-layout-row" key={layout.id}><button className="visualizer-layout-apply" onClick={()=>void applyVisualizerLayout(layout)}><b>{layout.name}</b><small>{layout.style} · {layout.sensitivity.toFixed(2)}× · {layout.enabled ? 'enabled' : 'paused'}</small></button><button className="icon-button" title={`Delete ${layout.name}`} aria-label={`Delete ${layout.name}`} onClick={()=>void deleteVisualizerLayout(layout.id)}><Trash2 size={14}/></button></div>)}</div> : <p className="footnote">No layouts saved yet. Choose a style and sensitivity above, then save them as a reusable layout.</p>}</div></section></div>}
 
         {page === 'settings' && <div className="settings-page"><section className="settings-intro"><div className="settings-sparkle"><SettingsIcon size={25}/></div><div><span className="eyebrow">MAKE IT FEEL LIKE YOURS</span><h2>Settings</h2><p>Private by design. Your library and preferences stay on this device.</p></div></section><div className="settings-layout"><div className="settings-content">
           <SettingsCard icon={<LibraryBig size={18}/>} title="Music library" description="Choose the folder MyRiff scans for supported audio. Original tracks stay in place."><div className="settings-path"><div><b>{settings.musicFolder || 'No folder selected'}</b><small>{tracks.length.toLocaleString()} tracks in the local index</small></div><button className="secondary-button" onClick={async()=>{const f=await window.myriff.selectMusicFolder();if(f) {await saveSettings({musicFolder:f});await scanFolder(f)}}}><FolderOpen size={15}/> Choose folder</button></div><button className="subtle-button" onClick={()=>scanFolder(settings.musicFolder || undefined)}><RefreshCw size={14}/> Rescan library</button></SettingsCard>
