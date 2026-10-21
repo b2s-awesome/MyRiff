@@ -57,7 +57,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Local Radio page that generates a transparent metadata-based similarity queue.
 - [x] Discord Rich Presence integration hook, global media shortcuts, tray controls, optional sleep inhibition.
 - [ ] Audio-fingerprint similarity and “more like this” recommendations beyond metadata heuristics.
-- [ ] Configurable visualiser shader packs and saved visualiser layouts.
+- [x] Saved visualiser layouts with per-layout style, sensitivity and enabled state; settings IPC validates entries and limits them to 30. Arbitrary shader packs remain planned.
 - [ ] Full system media-session integration and volume hotkeys validated across Windows/macOS/Linux.
 - [ ] Verified Discord artwork handling for per-track art; current RPC uses a configured app asset key.
 
