@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
 import path from 'node:path'
-import type { AppSettings, AppRelease, AppReleaseAsset, AppReleaseCheck, EditorRequest, EditorSession, PlaybackState, StreamSource, DownloadFormat, UpdateChannel } from '../shared/types'
+import type { AppSettings, AppReleaseAsset, AppReleaseCheck, EditorRequest, EditorSession, PlaybackState, StreamSource, DownloadFormat, UpdateChannel } from '../shared/types'
 import * as store from './db'
 import { scanMusicFolder } from './library'
 import { startDownload, searchStreams, streamUrl, importRemotePlaylist, previewRemotePlaylist, cancelDownload, pauseDownload } from './streaming'
@@ -26,6 +26,14 @@ let stopLibraryWatch: (() => Promise<void>) | null = null
 let watcherRoot = ''
 let playlistSchedulerTimer: ReturnType<typeof setInterval> | null = null
 const scheduledPlaylistSources = new Set<number>()
+
+function isAllowedGitHubReleaseUrl(url: URL, allowDownload: boolean) {
+  if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.username || url.password) return false
+  const parts = url.pathname.split('/').filter(Boolean)
+  if (parts[0] !== 'b2s-awesome' || parts[1] !== 'MyRiff' || parts[2] !== 'releases') return false
+  if (allowDownload) return parts.length >= 6 && parts[3] === 'download' && Boolean(parts[4]) && Boolean(parts[5])
+  return parts.length === 3 || (parts.length === 5 && parts[3] === 'tag' && Boolean(parts[4]))
+}
 async function indexDownloadedFile(filePath: string) {
   try { await scanMusicFolder(path.dirname(filePath)) }
   catch (error) { console.warn('Downloaded file metadata scan failed:', error) }
@@ -461,11 +469,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       if (typeof value !== 'string') return null
       try {
         const url = new URL(value)
-        if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.username || url.password) return null
-        const base = '/b2s-awesome/MyRiff/releases/'
-        if (!url.pathname.startsWith(base)) return null
-        if (!allowDownload && url.pathname.startsWith(base + 'download/')) return null
-        return url.href
+        return isAllowedGitHubReleaseUrl(url, allowDownload) ? url.href : null
       } catch { return null }
     }
     const releases: AppRelease[] = []
@@ -498,8 +502,8 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     if (typeof rawUrl !== 'string') throw new Error('A valid GitHub release URL is required.')
     let url: URL
     try { url = new URL(rawUrl) } catch { throw new Error('A valid GitHub release URL is required.') }
-    if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.username || url.password || !url.pathname.startsWith('/b2s-awesome/MyRiff/releases/')) {
-      throw new Error('For safety, MyRiff only opens release links hosted on its GitHub release page.')
+    if (!isAllowedGitHubReleaseUrl(url, false) && !isAllowedGitHubReleaseUrl(url, true)) {
+      throw new Error('For safety, MyRiff only opens validated release pages or installer assets hosted on its GitHub release page.')
     }
     await shell.openExternal(url.href)
     return true
