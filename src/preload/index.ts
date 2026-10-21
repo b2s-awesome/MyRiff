@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppSettings, DownloadProgress, EditorRequest, PlaybackState, SearchResult, StreamSource, Track, Playlist, PlaylistFolder, LyricsResult, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, DuplicateGroup, MetadataSuggestion, RemotePlaylistPreview, SavedPlaylistSource } from '../shared/types'
+import type { AppSettings, DownloadProgress, EditorRequest, EditorSession, PlaybackState, SearchResult, StreamSource, Track, Playlist, PlaylistFolder, LyricsResult, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, DuplicateGroup, MetadataSuggestion, RemotePlaylistPreview, SavedPlaylistSource } from '../shared/types'
 
 const api = {
   selectMusicFolder: () => ipcRenderer.invoke('dialog:music-folder') as Promise<string | null>,
@@ -45,6 +45,10 @@ const api = {
   getDownloadJobs: () => ipcRenderer.invoke('download:jobs') as Promise<(DownloadProgress & { updatedAt: number })[]>,
   openDownloadedFile: (filePath: string) => ipcRenderer.invoke('download:open', filePath),
   deleteDownload: (id: string, deleteFile: boolean) => ipcRenderer.invoke('download:delete', id, deleteFile),
+  getEditorSession: (trackPath: string) => ipcRenderer.invoke('editor-session:get', trackPath) as Promise<EditorSession | null>,
+  saveEditorSession: (session: Omit<EditorSession, 'updatedAt'>) => ipcRenderer.invoke('editor-session:save', session) as Promise<EditorSession>,
+  listEditorSessions: () => ipcRenderer.invoke('editor-session:list') as Promise<EditorSession[]>,
+  deleteEditorSession: (trackPath: string) => ipcRenderer.invoke('editor-session:delete', trackPath) as Promise<boolean>,
   exportAudio: (request: EditorRequest) => ipcRenderer.invoke('editor:export', request),
   searchLyrics: (title: string, artist: string, album: string, duration: number) => ipcRenderer.invoke('lyrics:search', title, artist, album, duration) as Promise<LyricsResult | null>,
   importLrc: () => ipcRenderer.invoke('lyrics:import'),
