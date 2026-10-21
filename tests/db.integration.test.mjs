@@ -169,6 +169,7 @@ test('SQLite integration: legacy version-1 backups without newer optional collec
     delete backup.libraryRoots
     delete backup.playlistSources
     delete backup.downloadJobs
+    delete backup.editorSessions
 
     api.closeDatabase()
     api.initDatabase(restoredDb)
