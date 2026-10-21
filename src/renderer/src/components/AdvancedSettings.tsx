@@ -19,6 +19,7 @@ export default function AdvancedSettings({ settings, onChange, audioOutputs, tra
   const [profileValue, setProfileValue] = useState('')
   const [backupBusy, setBackupBusy] = useState(false)
   const [capturingShortcut, setCapturingShortcut] = useState<string | null>(null)
+  const [capturingGlobalShortcut, setCapturingGlobalShortcut] = useState<string | null>(null)
   const [calibrationStatus, setCalibrationStatus] = useState('No test tone is playing.')
   const [calibrationBusy, setCalibrationBusy] = useState(false)
   const calibrationRef = useRef<{ context: AudioContext; oscillator: OscillatorNode; timer: number | null } | null>(null)
@@ -173,7 +174,27 @@ export default function AdvancedSettings({ settings, onChange, audioOutputs, tra
     <SettingsCard icon={<Keyboard size={18}/>} title="Keyboard shortcuts" description="Change shortcuts to fit your workflow. Use standard names such as Space, Ctrl+K, F, Q, or MediaTrackNext.">
       <div className="shortcut-grid">{([['playPause','Play / pause'],['next','Next track'],['previous','Previous track'],['search','Focus search'],['queue','Toggle queue'],['favorite','Favourite current track']] as const).map(([key, label]) => <label key={key}><span>{label}</span><input value={capturingShortcut === key ? 'Press a key combination…' : settings.keyboardShortcuts[key] || ''} readOnly onClick={() => setCapturingShortcut(key)} onBlur={() => setCapturingShortcut(old => old === key ? null : old)} onKeyDown={event => { if (capturingShortcut !== key) return; event.preventDefault(); event.stopPropagation(); if (event.key === 'Escape') { setCapturingShortcut(null); return } if (event.key === 'Backspace' || event.key === 'Delete') { onChange({ keyboardShortcuts: { ...settings.keyboardShortcuts, [key]: '' } }); setCapturingShortcut(null); return } if (['Control','Alt','Shift','Meta'].includes(event.key)) return; const base = event.key === ' ' ? 'Space' : event.key.length === 1 ? event.key.toUpperCase() : event.key; const binding = `${event.ctrlKey ? 'Ctrl+' : ''}${event.altKey ? 'Alt+' : ''}${event.shiftKey ? 'Shift+' : ''}${event.metaKey ? 'Meta+' : ''}${base}`; const conflict = Object.entries(settings.keyboardShortcuts).find(([other, value]) => other !== key && value && value.toLowerCase() === binding.toLowerCase()); if (conflict) { onNotify(`${binding} is already assigned to ${({playPause:'Play / pause',next:'Next track',previous:'Previous track',search:'Focus search',queue:'Toggle queue',favorite:'Favourite current track'} as Record<string,string>)[conflict[0]] || conflict[0]}. Choose a different combination.`); return } onChange({ keyboardShortcuts: { ...settings.keyboardShortcuts, [key]: binding } }); setCapturingShortcut(null) }} placeholder="Click, then press a shortcut"/></label>)}</div>
       <button className="subtle-button" onClick={() => { setCapturingShortcut(null); return onChange({ keyboardShortcuts: { playPause: 'Space', next: 'MediaTrackNext', previous: 'MediaTrackPrevious', search: 'Ctrl+K', queue: 'Q', favorite: 'F' } }) }}>Restore default shortcuts</button>
-      <p className="footnote">Click a field, press a key combination, and press Backspace to disable it. Conflicting app shortcuts are rejected. OS media keys are also registered globally by the main process.</p>
+      <p className="footnote">Click a field, press a key combination, and press Backspace to disable it. Conflicting app shortcuts are rejected.</p>
+      <div className="global-shortcut-head"><div><b>OS-global shortcuts</b><small>Work while MyRiff is unfocused. Some accelerators may be reserved by the operating system or another app.</small></div><Toggle checked={settings.globalShortcutsEnabled} onChange={v => onChange({ globalShortcutsEnabled: v })}/></div>
+      <div className="shortcut-grid global-shortcut-grid">{([['playPause','Play / pause'],['next','Next track'],['previous','Previous track'],['volumeUp','MyRiff volume up'],['volumeDown','MyRiff volume down']] as const).map(([key,label]) => <label key={key}><span>{label}</span><input value={capturingGlobalShortcut === key ? 'Press a global combination…' : settings.globalKeyboardShortcuts?.[key] || ''} readOnly onClick={() => setCapturingGlobalShortcut(key)} onBlur={() => setCapturingGlobalShortcut(old => old === key ? null : old)} onKeyDown={event => {
+        if (capturingGlobalShortcut !== key) return
+        event.preventDefault(); event.stopPropagation()
+        if (event.key === 'Escape') { setCapturingGlobalShortcut(null); return }
+        if (event.key === 'Backspace' || event.key === 'Delete') { void onChange({ globalKeyboardShortcuts: { ...settings.globalKeyboardShortcuts, [key]: '' } }); setCapturingGlobalShortcut(null); return }
+        if (['Control','Alt','Shift','Meta'].includes(event.key)) return
+        const knownMediaKeys: Record<string,string> = { MediaPlayPause: 'MediaPlayPause', MediaTrackNext: 'MediaNextTrack', MediaTrackPrevious: 'MediaPreviousTrack', AudioVolumeUp: 'VolumeUp', AudioVolumeDown: 'VolumeDown', AudioVolumeMute: 'VolumeMute' }
+        const base = knownMediaKeys[event.key] || (event.key === ' ' ? 'Space' : event.key.length === 1 ? event.key.toUpperCase() : event.key)
+        const hasModifier = event.ctrlKey || event.altKey || event.shiftKey || event.metaKey
+        const mediaKeys = ['MediaPlayPause','MediaNextTrack','MediaPreviousTrack','VolumeUp','VolumeDown','VolumeMute']
+        if (!hasModifier && !mediaKeys.includes(base)) { onNotify('For an OS-global shortcut, use Ctrl, Alt, Shift or Meta with a key, or press a supported media key.'); return }
+        const binding = `${event.ctrlKey ? 'Ctrl+' : ''}${event.altKey ? 'Alt+' : ''}${event.shiftKey ? 'Shift+' : ''}${event.metaKey ? 'Meta+' : ''}${base}`
+        const conflict = Object.entries(settings.globalKeyboardShortcuts || {}).find(([other,value]) => other !== key && value && value.toLowerCase() === binding.toLowerCase())
+        if (conflict) { onNotify(`${binding} is already assigned to ${conflict[0]}. Choose another global shortcut.`); return }
+        void onChange({ globalKeyboardShortcuts: { ...settings.globalKeyboardShortcuts, [key]: binding } })
+        setCapturingGlobalShortcut(null)
+      }} placeholder="Click, then press a global shortcut" /></label>)}</div>
+      <button className="subtle-button" onClick={() => { setCapturingGlobalShortcut(null); return onChange({ globalShortcutsEnabled: true, globalKeyboardShortcuts: { playPause: 'MediaPlayPause', next: 'MediaNextTrack', previous: 'MediaPreviousTrack', volumeUp: 'VolumeUp', volumeDown: 'VolumeDown' } }) }}>Restore OS-global defaults</button>
+      <p className="footnote">Global shortcuts can fail to register when another process or the OS owns the accelerator. Blank a binding to leave that action unregistered, or turn off OS-global shortcuts entirely.</p>
     </SettingsCard>
 
     <SettingsCard icon={<WandSparkles size={18}/>} title="Library intelligence" description="Keep your index tidy and control metadata lookups. These features never silently overwrite your original tags.">
