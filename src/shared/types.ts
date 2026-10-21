@@ -116,6 +116,15 @@ export interface LyricsResult { synced: boolean; lines: LyricLine[]; provider: s
 export interface LyricWord { time: number; text: string }
 export interface LyricLine { time: number | null; text: string; words?: LyricWord[] }
 
+export interface AcousticSimilarityScore { path: string; similarity: number }
+export interface AcousticSimilarityReport {
+  seedPath: string
+  results: AcousticSimilarityScore[]
+  compared: number
+  cached: number
+  skipped: number
+}
+
 export interface AudioProfile {
   id: string
   name: string

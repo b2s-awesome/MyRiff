@@ -16,6 +16,7 @@ import { searchMusicBrainz } from './metadata'
 import { createSmartPlaylist, listSmartPlaylists, deleteSmartPlaylist, getSmartPlaylistTracks, setTrackFavorite, setTrackRating, recordPlayedTrack, listListeningHistory, clearListeningHistory, addBookmark, listBookmarks, deleteBookmark, upsertLibraryRoot, exportBackupObject, restoreBackupObject, removeTracks, removeMissingTracksWithinRoot, saveDownloadJob, listDownloadJobs, savePlaylistSource, listPlaylistSources, deletePlaylistSource, touchPlaylistSource, checkpointDatabase } from './db'
 import { basename, extname, resolve, dirname } from 'node:path'
 import { analyseReplayGain as analyseTrackLoudness } from './audioAnalysis'
+import { analyseAcousticSimilarity } from './acousticSimilarity'
 import { standardUserDataPath, portableMarkerPath, portableUserDataPath } from './appPaths'
 import { configureGlobalShortcuts } from './globalShortcuts'
 
@@ -151,6 +152,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     return { ...result, tracks: store.listTracks(), missingRemoved: missing.length }
   })
   ipcMain.handle('library:tracks', () => store.listTracks())
+  ipcMain.handle('radio:acoustic-similarity', (_e, seedPath: string, candidatePaths: string[]) => analyseAcousticSimilarity(seedPath, candidatePaths))
   ipcMain.handle('library:media-url', (_e, filePath: string) => {
     if (!store.isKnownTrack(filePath) && store.getSettings().bannerPath !== filePath) throw new Error('That file is not in the library or selected profile banner.')
     return `myriff-media://local?path=${encodeURIComponent(filePath)}`
