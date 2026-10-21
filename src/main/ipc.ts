@@ -544,7 +544,9 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       signal: AbortSignal.timeout(12_000)
     }).catch(error => { throw new Error(`Could not reach GitHub Releases: ${error instanceof Error ? error.message : 'network error'}`) })
     if (!response.ok) {
-      if (response.status === 404) throw new Error('GitHub Releases are not visible anonymously. Check the repository visibility or publish a public release feed.')
+      if (response.status === 404) {
+        return { appVersion: app.getVersion(), platform: process.platform, arch: process.arch, channel, checkedAt: new Date().toISOString(), releases: [], browserAuthRequired: true }
+      }
       if (response.status === 403 || response.status === 429) throw new Error('GitHub rate-limited the release check. Wait a little and try again.')
       throw new Error(`GitHub Releases returned HTTP ${response.status}.`)
     }
@@ -583,7 +585,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       })
       if (releases.length >= 20) break
     }
-    return { appVersion: app.getVersion(), platform: process.platform, arch: process.arch, channel, checkedAt: new Date().toISOString(), releases }
+    return { appVersion: app.getVersion(), platform: process.platform, arch: process.arch, channel, checkedAt: new Date().toISOString(), releases, browserAuthRequired: false }
   })
   ipcMain.handle('updates:open-url', async (_e, rawUrl: unknown) => {
     if (typeof rawUrl !== 'string') throw new Error('A valid GitHub release URL is required.')
