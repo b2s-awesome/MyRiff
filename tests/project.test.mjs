@@ -413,6 +413,26 @@ test('Sound Lab supports adjustable EQ bandwidth and stereo width in live and of
 })
 
 
+test('visualiser layouts can be saved locally, validated, applied and removed', () => {
+  const types = read('src/shared/types.ts')
+  const db = read('src/main/db.ts')
+  const ipc = read('src/main/ipc.ts')
+  const app = read('src/renderer/src/App.tsx')
+  const styles = read('src/renderer/src/styles.css')
+  assert.ok(types.includes('export interface VisualizerLayout'))
+  assert.ok(types.includes('visualizerLayouts: VisualizerLayout[]'))
+  assert.ok(db.includes("visualizerLayouts: []"))
+  assert.ok(ipc.includes('patch.visualizerLayouts !== undefined'))
+  assert.ok(ipc.includes("'visualizerLayouts','viewMode'"))
+  assert.ok(ipc.includes("if (key === 'visualizerLayouts')"))
+  assert.ok(ipc.includes('Save up to 30 visualiser layouts.'))
+  assert.ok(app.includes('saveVisualizerLayout'))
+  assert.ok(app.includes('applyVisualizerLayout'))
+  assert.ok(app.includes('deleteVisualizerLayout'))
+  assert.ok(app.includes('Saved visualiser layouts'))
+  assert.ok(styles.includes('.visualizer-layout-manager'))
+})
+
 test('editor sessions load per track, auto-save editor controls, and have typed IPC access', () => {
   const types = read('src/shared/types.ts')
   const db = read('src/main/db.ts')
