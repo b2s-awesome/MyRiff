@@ -79,6 +79,7 @@ export function initDatabase(userDataDir: string) {
     );
     CREATE TABLE IF NOT EXISTS library_roots (path TEXT PRIMARY KEY, watched INTEGER NOT NULL DEFAULT 0, last_scan INTEGER);
     CREATE TABLE IF NOT EXISTS playlist_sources (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, url TEXT NOT NULL UNIQUE, format TEXT NOT NULL DEFAULT 'opus', last_synced INTEGER, created_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS metadata_review_queue (track_path TEXT PRIMARY KEY REFERENCES tracks(path) ON DELETE CASCADE, queued_at INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_history_played ON listening_history(played_at DESC);
     CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
     CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
@@ -264,6 +265,15 @@ export function addDownload(row: { id: string; title: string; filePath: string; 
 }
 export function listDownloads() { return db.prepare('SELECT id,title,file_path AS filePath,source_url AS sourceUrl,format,created_at AS createdAt FROM downloads ORDER BY created_at DESC').all() }
 export function forgetDownload(id: string) { db.prepare('DELETE FROM downloads WHERE id=?').run(id) }
+export function enqueueMetadataReview(trackPath: string) {
+  if (!isKnownTrack(trackPath)) return false
+  db.prepare('INSERT OR IGNORE INTO metadata_review_queue(track_path,queued_at) VALUES(?,?)').run(trackPath, Date.now())
+  return true
+}
+export function listMetadataReviewQueue(): string[] {
+  return (db.prepare('SELECT track_path FROM metadata_review_queue ORDER BY queued_at, track_path').all() as { track_path: string }[]).map(row => row.track_path)
+}
+export function completeMetadataReview(trackPath: string) { db.prepare('DELETE FROM metadata_review_queue WHERE track_path=?').run(trackPath); return true }
 export function checkpointDatabase() { if (db?.open) db.pragma('wal_checkpoint(TRUNCATE)') }
 export function closeDatabase() { if (db?.open) db.close() }
 
@@ -353,7 +363,7 @@ export function exportBackupObject() {
     bookmarks: db.prepare('SELECT * FROM bookmarks').all(), history: db.prepare('SELECT * FROM listening_history').all(),
     lyrics: db.prepare('SELECT * FROM lyrics').all(), downloads: db.prepare('SELECT * FROM downloads').all(),
     libraryRoots: db.prepare('SELECT * FROM library_roots').all(), playlistSources: db.prepare('SELECT * FROM playlist_sources').all(),
-    downloadJobs: db.prepare('SELECT * FROM download_jobs').all()
+    downloadJobs: db.prepare('SELECT * FROM download_jobs').all(), metadataReviewQueue: db.prepare('SELECT * FROM metadata_review_queue').all()
   }
 }
 export function restoreBackupObject(backup: any) {
@@ -407,6 +417,11 @@ export function restoreBackupObject(backup: any) {
       if (sourceUrl.protocol !== 'https:' || !supported) continue
       db.prepare('INSERT OR IGNORE INTO playlist_sources(name,url,format,last_synced,created_at) VALUES(?,?,?,?,?)')
         .run(row.name.trim(), sourceUrl.toString(), row.format, row.last_synced == null ? null : (Number.isFinite(Number(row.last_synced)) ? Number(row.last_synced) : null), Number.isFinite(Number(row.created_at)) ? Number(row.created_at) : Date.now())
+    }
+    for (const row of Array.isArray(backup.metadataReviewQueue) ? backup.metadataReviewQueue : []) {
+      if (row && typeof row.track_path === 'string' && isKnownTrack(row.track_path)) {
+        db.prepare('INSERT OR IGNORE INTO metadata_review_queue(track_path,queued_at) VALUES(?,?)').run(row.track_path, Number.isFinite(Number(row.queued_at)) ? Number(row.queued_at) : Date.now())
+      }
     }
     const jobStatuses = new Set(['queued','downloading','paused','finished','error','cancelled'])
     for (const row of Array.isArray(backup.downloadJobs) ? backup.downloadJobs : []) {
