@@ -31,6 +31,7 @@ export interface AppReleaseCheck {
   channel: UpdateChannel
   checkedAt: string
   releases: AppRelease[]
+  browserAuthRequired: boolean
 }
 
 export type MetadataExportEntryState = 'pending' | 'removed' | 'skipped'
