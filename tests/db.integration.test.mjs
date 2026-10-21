@@ -241,3 +241,25 @@ test('SQLite integration: per-track editor sessions persist and round-trip throu
     await fs.rm(tempRoot, { recursive: true, force: true })
   }
 })
+
+test('SQLite integration: acoustic similarity cache is versioned and invalidated when the file changes', async () => {
+  const api = await loadDatabaseModule()
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'myriff-acoustic-cache-'))
+  try {
+    api.initDatabase(path.join(tempRoot, 'user-data'))
+    const trackPath = path.join(tempRoot, 'cached-track.flac')
+    addTrack(api, trackPath, 'Cached Track')
+    const modifiedAt = 1710000000123.5
+    const fileSize = 654321
+    const features = Array.from({ length: 176 }, (_, index) => index / 176)
+    assert.equal(api.getAcousticFingerprint(trackPath, modifiedAt, fileSize), null)
+    api.saveAcousticFingerprint(trackPath, modifiedAt, fileSize, features)
+    assert.deepEqual(api.getAcousticFingerprint(trackPath, modifiedAt, fileSize), features)
+    assert.equal(api.getAcousticFingerprint(trackPath, modifiedAt + 1, fileSize), null)
+    assert.equal(api.getAcousticFingerprint(trackPath, modifiedAt, fileSize + 1), null)
+    assert.equal(api.getAcousticFingerprint(trackPath, modifiedAt, fileSize).length, 176)
+  } finally {
+    try { api.closeDatabase() } catch { /* close only if database initialisation succeeded */ }
+    await fs.rm(tempRoot, { recursive: true, force: true })
+  }
+})
