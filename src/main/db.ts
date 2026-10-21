@@ -36,6 +36,11 @@ export function initDatabase(userDataDir: string) {
       track_no INTEGER, genre TEXT NOT NULL DEFAULT '', year INTEGER, duration REAL NOT NULL DEFAULT 0,
       artwork_key TEXT, folder TEXT NOT NULL DEFAULT '', added_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS acoustic_similarity_cache (
+      track_path TEXT PRIMARY KEY REFERENCES tracks(path) ON DELETE CASCADE,
+      modified_at REAL NOT NULL, file_size INTEGER NOT NULL, version INTEGER NOT NULL,
+      features_json TEXT NOT NULL, updated_at INTEGER NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS artworks (key TEXT PRIMARY KEY, path TEXT NOT NULL, mime TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS playlist_folders (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
@@ -113,6 +118,39 @@ export function addArtwork(key: string, filePath: string, mime: string) {
   db.prepare('INSERT OR REPLACE INTO artworks(key,path,mime) VALUES(?,?,?)').run(key, filePath, mime)
 }
 export function getArtworkMime(key: string) { return (db.prepare('SELECT mime FROM artworks WHERE key = ?').get(key) as { mime: string } | undefined)?.mime ?? 'image/jpeg' }
+export const ACOUSTIC_FEATURE_VERSION = 1
+export const ACOUSTIC_FEATURE_LENGTH = 176
+
+export function getAcousticFingerprint(trackPath: string, modifiedAt: number, fileSize: number): number[] | null {
+  if (typeof trackPath !== 'string' || !trackPath || trackPath.length > 32768 ||
+      !Number.isFinite(modifiedAt) || !Number.isFinite(fileSize) || fileSize < 0 || !isKnownTrack(trackPath)) return null
+  const row = db.prepare('SELECT modified_at, file_size, version, features_json FROM acoustic_similarity_cache WHERE track_path=?').get(trackPath) as
+    { modified_at: number; file_size: number; version: number; features_json: string } | undefined
+  if (!row || Number(row.modified_at) !== modifiedAt || Number(row.file_size) !== fileSize || Number(row.version) !== ACOUSTIC_FEATURE_VERSION) return null
+  try {
+    const features = JSON.parse(row.features_json)
+    if (!Array.isArray(features) || features.length !== ACOUSTIC_FEATURE_LENGTH ||
+        features.some(value => typeof value !== 'number' || !Number.isFinite(value))) return null
+    return features as number[]
+  } catch { return null }
+}
+export function saveAcousticFingerprint(trackPath: string, modifiedAt: number, fileSize: number, features: number[]) {
+  if (typeof trackPath !== 'string' || !trackPath || trackPath.length > 32768 || !isKnownTrack(trackPath)) {
+    throw new Error('Only tracks already in the local library can have acoustic features cached.')
+  }
+  if (!Number.isFinite(modifiedAt) || !Number.isFinite(fileSize) || fileSize < 0 ||
+      !Array.isArray(features) || features.length !== ACOUSTIC_FEATURE_LENGTH ||
+      features.some(value => typeof value !== 'number' || !Number.isFinite(value))) {
+    throw new Error('Invalid acoustic feature vector.')
+  }
+  db.prepare(`INSERT INTO acoustic_similarity_cache(track_path,modified_at,file_size,version,features_json,updated_at)
+    VALUES(?,?,?,?,?,?) ON CONFLICT(track_path) DO UPDATE SET
+    modified_at=excluded.modified_at,file_size=excluded.file_size,version=excluded.version,
+    features_json=excluded.features_json,updated_at=excluded.updated_at`)
+    .run(trackPath, modifiedAt, fileSize, ACOUSTIC_FEATURE_VERSION, JSON.stringify(features), Date.now())
+  return true
+}
+
 export function upsertTrack(t: Omit<Track, 'artworkUrl' | 'source'> & { artworkKey?: string | null }) {
   db.prepare(`INSERT INTO tracks(path,title,artist,album,track_no,genre,year,duration,artwork_key,folder,added_at)
     VALUES(@path,@title,@artist,@album,@trackNo,@genre,@year,@duration,@artworkKey,@folder,@addedAt)
