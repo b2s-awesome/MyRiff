@@ -413,6 +413,20 @@ test('Sound Lab supports adjustable EQ bandwidth and stereo width in live and of
 })
 
 
+test('audio output diagnostics use a short quiet panned tone and selected-sink routing', () => {
+  const settings = read('src/renderer/src/components/AdvancedSettings.tsx')
+  const styles = read('src/renderer/src/styles.css')
+  assert.ok(settings.includes('createOscillator()'))
+  assert.ok(settings.includes('createStereoPanner()'))
+  assert.ok(settings.includes('setSinkId(outputId)'))
+  assert.ok(settings.includes('linearRampToValueAtTime(0.055'))
+  assert.ok(settings.includes('playCalibrationTone(-1, \'left\')'))
+  assert.ok(settings.includes('playCalibrationTone(1, \'right\')'))
+  assert.ok(settings.includes('Output check'))
+  assert.ok(settings.includes('aria-live="polite"'))
+  assert.ok(styles.includes('.audio-calibration-panel'))
+})
+
 test('visualiser layouts can be saved locally, validated, applied and removed', () => {
   const types = read('src/shared/types.ts')
   const db = read('src/main/db.ts')
