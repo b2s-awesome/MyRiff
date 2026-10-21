@@ -70,7 +70,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Portable data mode with a startup marker, database checkpoint, data-folder migration and restart-on-switch (needs packaged-runtime validation).
 - [x] App-scoped shortcut capture with collision detection and clearable bindings, plus independently enabled/captured OS-global media and MyRiff-volume shortcuts. Global bindings are validated for known actions and duplicate accelerators; registration failures are logged because the OS or another app may reserve a key.
 - [x] Customisation profile import/export independent of the full database backup; imported values are filtered and range-validated.
-- [~] On-demand stable/preview release browser with platform-matched installer selection and a full MyRiff backup before opening an installer. Applying, downgrading and rollback remain manual; unattended binary replacement is intentionally not enabled.
+- [x] Manual in-app stable/preview release browsing with OS/architecture-aware installer matching, backup-before-install, and safe URL validation. Private repository fallback opens GitHub Releases in the browser after a backup; users authenticate through GitHub itself. App binary upgrade/downgrade remains manual and there is no silent self-update.
 - [x] Dependency-aware typecheck, regression tests, renderer/main build and Windows/macOS/Linux packaging passed on GitHub Actions. This hardening branch adds a packaged renderer/preload startup smoke test for all OSes and commits the generated lockfile after a green main-branch matrix. Interactive UI automation, audio-device integration and listening-quality tests remain planned.
 
 ## Release gates
