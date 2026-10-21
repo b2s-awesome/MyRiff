@@ -38,7 +38,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Existing-library matching report and unmatched-entry reporting.
 - [x] Opt-in scheduler for periodic playlist sync with a configurable interval; runs while the app is open. Per-source rules and richer notifications remain partial.
 - [x] FIFO download queue with a consistent global concurrency cap, pause/cancel handling, persisted activity and a Downloads-page retry/resume action after restart. Retrying reuses the source URL and format; partial-file continuation depends on yt-dlp and the source.
-- [ ] Automatic metadata/art enrichment after download with confidence review.
+- [x] Opt-in post-download metadata review queue persists across restarts and backups. Downloaded tracks are indexed, queued when MusicBrainz enrichment is enabled, confidence-scored suggestions are fetched for review, and tagged-copy export leaves the original untouched.
 - [ ] Spotify/Apple Music playlist resolution is conditional on public access/exported playlist metadata; no unsupported private API or DRM bypass.
 
 ## Audio editor and lyrics
@@ -48,7 +48,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Draggable waveform trim selection, 0.1-second snapping and undo/redo for waveform range changes.
 - [x] Waveform zoom/pan with global-time mapping, draggable trim ranges, 0.1-second snapping and range undo/redo. Transient-aware snapping and persisted non-destructive edit sessions remain planned.
 - [x] Import and display authored per-word timestamps from Enhanced LRC files; line-only lyrics retain the approximate karaoke preview. Automatic speech alignment that generates word timestamps and an external lyric-provider plug-in interface remain planned.
-- [ ] Independent effect rendering per effect-chain order in offline exports.
+- [x] FFmpeg exports render EQ, distortion and reverb in the configured effect-chain order. Stereo-width processing is applied after that chain; live audio and exports may differ slightly because their DSP implementations differ.
 
 ## Discovery and integrations
 
