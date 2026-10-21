@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
-import { getSettings, getAcousticFingerprint, saveAcousticFingerprint, isKnownTrack } from './db'
+import { ACOUSTIC_FEATURE_LENGTH, getSettings, getAcousticFingerprint, saveAcousticFingerprint, isKnownTrack } from './db'
 
 const SAMPLE_RATE = 11025
 const MAX_SECONDS = 24
@@ -13,7 +13,6 @@ const BANDS = 32
 const CHROMA = 12
 const FEATURES_PER_SEGMENT = BANDS + CHROMA
 const FEATURE_VERSION_LENGTH = SEGMENT_COUNT * FEATURES_PER_SEGMENT
-const CACHE_VERSION = 1
 
 function decodePcm(filePath: string, executable: string): Promise<Float32Array> {
   return new Promise((resolve, reject) => {
