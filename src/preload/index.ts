@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppSettings, AcousticSimilarityReport, DownloadProgress, EditorRequest, EditorSession, PlaybackState, SearchResult, StreamSource, Track, Playlist, PlaylistFolder, LyricsResult, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, DuplicateGroup, MetadataSuggestion, RemotePlaylistPreview, SavedPlaylistSource } from '../shared/types'
+import type { AppSettings, AppReleaseCheck, UpdateChannel, AcousticSimilarityReport, DownloadProgress, EditorRequest, EditorSession, PlaybackState, SearchResult, StreamSource, Track, Playlist, PlaylistFolder, LyricsResult, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, DuplicateGroup, MetadataSuggestion, RemotePlaylistPreview, SavedPlaylistSource } from '../shared/types'
 
 const api = {
   selectMusicFolder: () => ipcRenderer.invoke('dialog:music-folder') as Promise<string | null>,
@@ -81,6 +81,8 @@ const api = {
   exportPlaylistFile: (id: number, format: 'm3u'|'csv'|'txt') => ipcRenderer.invoke('playlist:export-file', id, format),
   importPlaylistFile: () => ipcRenderer.invoke('playlist:import-file') as Promise<{ playlistId: number; playlistName: string; total: number; found: number; missing: string[] }|null>,
   openTuneMyMusic: () => ipcRenderer.invoke('external:open-tunemymusic') as Promise<boolean>,
+  listAppReleases: (channel: UpdateChannel) => ipcRenderer.invoke('updates:list', channel) as Promise<AppReleaseCheck>,
+  openReleaseUrl: (url: string) => ipcRenderer.invoke('updates:open-url', url) as Promise<boolean>,
   exportBackup: () => ipcRenderer.invoke('backup:export') as Promise<string|false>,
   importBackup: () => ipcRenderer.invoke('backup:import') as Promise<boolean>,
   exportSettingsProfile: () => ipcRenderer.invoke('settings-profile:export') as Promise<string|false>,
