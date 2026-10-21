@@ -161,6 +161,18 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     if (patch.eqQ !== undefined && (!Number.isFinite(patch.eqQ) || patch.eqQ < 0.3 || patch.eqQ > 8)) throw new Error('EQ bandwidth must be between 0.3 and 8.')
     if (patch.eqFrequencies !== undefined && (!Array.isArray(patch.eqFrequencies) || patch.eqFrequencies.length !== 10 || patch.eqFrequencies.some(v => typeof v !== 'number' || !Number.isFinite(v) || v < 20 || v > 20000))) throw new Error('EQ centre frequencies must contain ten values between 20 and 20000 Hz.')
     if (patch.stereoWidth !== undefined && (!Number.isFinite(patch.stereoWidth) || patch.stereoWidth < 0 || patch.stereoWidth > 2)) throw new Error('Stereo width must be between 0 and 2.')
+    if (patch.visualizerLayouts !== undefined) {
+      const layouts = patch.visualizerLayouts
+      const styles = new Set(['bars', 'wave', 'mirror', 'spectrum', 'dots'])
+      if (!Array.isArray(layouts) || layouts.length > 30) throw new Error('Save up to 30 visualiser layouts.')
+      const ids = new Set<string>()
+      for (const layout of layouts) {
+        if (!layout || typeof layout !== 'object' || typeof layout.id !== 'string' || !layout.id.trim() || layout.id.length > 80 || ids.has(layout.id)) throw new Error('Visualiser layout identifiers must be valid and unique.')
+        if (typeof layout.name !== 'string' || !layout.name.trim() || layout.name.length > 48) throw new Error('Visualiser layout names must be 1–48 characters.')
+        if (!styles.has(layout.style) || typeof layout.sensitivity !== 'number' || !Number.isFinite(layout.sensitivity) || layout.sensitivity < 0.25 || layout.sensitivity > 2.5 || typeof layout.enabled !== 'boolean' || !Number.isFinite(layout.createdAt)) throw new Error('Visualiser layout settings are invalid.')
+        ids.add(layout.id)
+      }
+    }
     const settings = store.setSettings(patch)
     if (patch.inhibitSleep !== undefined) refreshPowerBlocker(settings, playingNow)
     if (patch.autoWatchFolders !== undefined || patch.musicFolder !== undefined) await configureWatcher(settings)
