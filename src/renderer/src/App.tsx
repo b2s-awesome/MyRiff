@@ -39,7 +39,7 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [crossfadeEpoch, setCrossfadeEpoch] = useState(0)
   const audioEngine = useAudioEngine(audioRef, settings, nextAudioRef)
-  const { ensureGraph, analyser, crossfadeToNext, handoffToMain, resetCrossfade } = audioEngine
+  const { ensureGraph, setOutputDevice, analyser, crossfadeToNext, handoffToMain, resetCrossfade } = audioEngine
   const [tracks, setTracks] = useState<Track[]>([])
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [playlistFolders, setPlaylistFolders] = useState<PlaylistFolder[]>([])
@@ -334,9 +334,11 @@ export default function App() {
     return () => { alive = false; navigator.mediaDevices?.removeEventListener?.('devicechange', refreshOutputs) }
   }, [])
   useEffect(() => {
-    const audio = audioRef.current as (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }) | null
-    if (audio && settings?.audioOutputDeviceId && audio.setSinkId) audio.setSinkId(settings.audioOutputDeviceId).catch(e => notify(`Audio output selection failed: ${e instanceof Error ? e.message : 'unsupported device'}`))
-  }, [settings?.audioOutputDeviceId, notify])
+    if (!settings) return
+    void setOutputDevice(settings.audioOutputDeviceId).catch(error => {
+      notify(error instanceof Error ? error.message : 'Audio output routing failed. Choose System default in Audio Settings.')
+    })
+  }, [settings?.audioOutputDeviceId, setOutputDevice, notify])
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
