@@ -245,15 +245,20 @@ test('playlist folders are nested, survive backup restore, and never delete sour
 })
 
 
-test('packaged smoke test verifies renderer and preload initialization with bounded timeout', () => {
+test('packaged smoke test verifies renderer/preload readiness and reports platform startup failures', () => {
   const main = read('src/main/index.ts')
   const script = read('scripts/smoke-packaged.mjs')
   assert.match(main, /MYRIFF_SMOKE_MARKER/)
   assert.match(main, /did-finish-load/)
+  assert.match(main, /did-fail-load/)
+  assert.match(main, /preload-error/)
+  assert.match(main, /render-process-gone/)
   assert.ok(main.includes('window.myriff'))
-  assert.match(script, /30_000/)
+  assert.match(script, /60_000/)
   assert.match(script, /rendererLoaded/)
   assert.match(script, /preloadApi/)
+  assert.match(script, /child\.stderr\?\.on\('data'/)
+  assert.match(script, /Timed out after 60 seconds/)
   assert.match(script, /linux-unpacked/)
   assert.match(script, /win-unpacked/)
   assert.ok(script.includes("Contents', 'MacOS', 'MyRiff'"))
