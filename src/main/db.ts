@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import path from 'node:path'
 import fs from 'node:fs'
-import type { AppSettings, PlaybackState, Playlist, PlaylistFolder, Track, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, AudioProfile, DownloadProgress, SavedPlaylistSource } from '../shared/types'
+import type { AppSettings, PlaybackState, Playlist, PlaylistFolder, Track, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, AudioProfile, DownloadProgress, SavedPlaylistSource, EditorSession } from '../shared/types'
 
 const defaults: AppSettings = {
   musicFolder: '', theme: 'dark', accent: '#b69cff', dynamicAccent: true, downloadFormat: 'opus', downloadQuality: '0',
@@ -80,6 +80,12 @@ export function initDatabase(userDataDir: string) {
     CREATE TABLE IF NOT EXISTS library_roots (path TEXT PRIMARY KEY, watched INTEGER NOT NULL DEFAULT 0, last_scan INTEGER);
     CREATE TABLE IF NOT EXISTS playlist_sources (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, url TEXT NOT NULL UNIQUE, format TEXT NOT NULL DEFAULT 'opus', last_synced INTEGER, created_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS metadata_review_queue (track_path TEXT PRIMARY KEY REFERENCES tracks(path) ON DELETE CASCADE, queued_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS editor_sessions (
+      track_path TEXT PRIMARY KEY REFERENCES tracks(path) ON DELETE CASCADE,
+      start_seconds REAL NOT NULL DEFAULT 0, end_seconds REAL NOT NULL DEFAULT 0,
+      speed REAL NOT NULL DEFAULT 1, reverb REAL NOT NULL DEFAULT 0, distortion REAL NOT NULL DEFAULT 0,
+      eq_bands TEXT NOT NULL DEFAULT '[0,0,0,0,0,0,0,0,0,0]', updated_at INTEGER NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS idx_history_played ON listening_history(played_at DESC);
     CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
     CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
@@ -354,6 +360,53 @@ export function upsertLibraryRoot(folder: string, watched: boolean) {
   db.prepare('INSERT INTO library_roots(path,watched,last_scan) VALUES(?,?,?) ON CONFLICT(path) DO UPDATE SET watched=excluded.watched,last_scan=excluded.last_scan').run(folder, watched ? 1 : 0, Date.now())
 }
 export function listLibraryRoots() { return db.prepare('SELECT path,watched,last_scan AS lastScan FROM library_roots ORDER BY path').all() as { path: string; watched: number; lastScan: number | null }[] }
+export function saveEditorSession(input: Omit<EditorSession, 'updatedAt'>): EditorSession {
+  if (!input || typeof input !== 'object' || typeof input.trackPath !== 'string' || !input.trackPath.trim() || input.trackPath.length > 32768) {
+    throw new Error('Choose a valid local track before saving an editor session.')
+  }
+  if (!isKnownTrack(input.trackPath)) throw new Error('This track is no longer in the library. Scan the library again before saving its editor session.')
+  const finite = (value: unknown, fallback: number) => typeof value === 'number' && Number.isFinite(value) ? value : fallback
+  const start = Math.max(0, Math.min(86400, finite(input.start, 0)))
+  const end = Math.max(0, Math.min(86400, finite(input.end, 0)))
+  const speed = Math.max(0.5, Math.min(2, finite(input.speed, 1)))
+  const reverb = Math.max(0, Math.min(1, finite(input.reverb, 0)))
+  const distortion = Math.max(0, Math.min(1, finite(input.distortion, 0)))
+  const bands = Array.isArray(input.eqBands) ? input.eqBands.slice(0, 10).map(value => Math.max(-12, Math.min(12, Math.round(finite(value, 0))))) : []
+  while (bands.length < 10) bands.push(0)
+  const updatedAt = Date.now()
+  db.prepare(`INSERT INTO editor_sessions(track_path,start_seconds,end_seconds,speed,reverb,distortion,eq_bands,updated_at)
+    VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(track_path) DO UPDATE SET
+    start_seconds=excluded.start_seconds,end_seconds=excluded.end_seconds,speed=excluded.speed,
+    reverb=excluded.reverb,distortion=excluded.distortion,eq_bands=excluded.eq_bands,updated_at=excluded.updated_at`)
+    .run(input.trackPath, start, end, speed, reverb, distortion, JSON.stringify(bands), updatedAt)
+  return { trackPath: input.trackPath, start, end, speed, reverb, distortion, eqBands: bands, updatedAt }
+}
+export function getEditorSession(trackPath: string): EditorSession | null {
+  if (typeof trackPath !== 'string' || !trackPath || trackPath.length > 32768) return null
+  const row = db.prepare('SELECT track_path AS trackPath,start_seconds AS start,end_seconds AS end,speed,reverb,distortion,eq_bands AS eqBands,updated_at AS updatedAt FROM editor_sessions WHERE track_path=?').get(trackPath) as (Omit<EditorSession, 'eqBands'> & { eqBands: string }) | undefined
+  if (!row) return null
+  let bands: unknown
+  try { bands = JSON.parse(row.eqBands) } catch { bands = [] }
+  return {
+    trackPath: row.trackPath,
+    start: Math.max(0, Math.min(86400, Number.isFinite(Number(row.start)) ? Number(row.start) : 0)),
+    end: Math.max(0, Math.min(86400, Number.isFinite(Number(row.end)) ? Number(row.end) : 0)),
+    speed: Math.max(0.5, Math.min(2, Number.isFinite(Number(row.speed)) ? Number(row.speed) : 1)),
+    reverb: Math.max(0, Math.min(1, Number.isFinite(Number(row.reverb)) ? Number(row.reverb) : 0)),
+    distortion: Math.max(0, Math.min(1, Number.isFinite(Number(row.distortion)) ? Number(row.distortion) : 0)),
+    eqBands: Array.isArray(bands) ? Array.from({ length: 10 }, (_, i) => Math.max(-12, Math.min(12, Math.round(Number.isFinite(Number(bands[i])) ? Number(bands[i]) : 0)))) : Array(10).fill(0),
+    updatedAt: Number.isFinite(Number(row.updatedAt)) ? Number(row.updatedAt) : 0
+  }
+}
+export function listEditorSessions(): EditorSession[] {
+  return (db.prepare('SELECT track_path FROM editor_sessions ORDER BY updated_at DESC').all() as { track_path: string }[])
+    .map(row => getEditorSession(row.track_path)).filter((session): session is EditorSession => session !== null)
+}
+export function deleteEditorSession(trackPath: string) {
+  if (typeof trackPath !== 'string' || !trackPath || trackPath.length > 32768) return false
+  return db.prepare('DELETE FROM editor_sessions WHERE track_path=?').run(trackPath).changes > 0
+}
+
 export function exportBackupObject() {
   return {
     format: 'myriff-backup', version: 1, exportedAt: new Date().toISOString(), settings: getSettings(), playback: getPlayback(),
@@ -363,7 +416,7 @@ export function exportBackupObject() {
     bookmarks: db.prepare('SELECT * FROM bookmarks').all(), history: db.prepare('SELECT * FROM listening_history').all(),
     lyrics: db.prepare('SELECT * FROM lyrics').all(), downloads: db.prepare('SELECT * FROM downloads').all(),
     libraryRoots: db.prepare('SELECT * FROM library_roots').all(), playlistSources: db.prepare('SELECT * FROM playlist_sources').all(),
-    downloadJobs: db.prepare('SELECT * FROM download_jobs').all(), metadataReviewQueue: db.prepare('SELECT * FROM metadata_review_queue').all()
+    downloadJobs: db.prepare('SELECT * FROM download_jobs').all(), metadataReviewQueue: db.prepare('SELECT * FROM metadata_review_queue').all(), editorSessions: db.prepare('SELECT * FROM editor_sessions').all()
   }
 }
 export function restoreBackupObject(backup: any) {
@@ -422,6 +475,22 @@ export function restoreBackupObject(backup: any) {
       if (row && typeof row.track_path === 'string' && isKnownTrack(row.track_path)) {
         db.prepare('INSERT OR IGNORE INTO metadata_review_queue(track_path,queued_at) VALUES(?,?)').run(row.track_path, Number.isFinite(Number(row.queued_at)) ? Number(row.queued_at) : Date.now())
       }
+    }
+    for (const row of Array.isArray(backup.editorSessions) ? backup.editorSessions : []) {
+      if (!row || typeof row.track_path !== 'string' || !isKnownTrack(row.track_path)) continue
+      let bands: unknown
+      try { bands = typeof row.eq_bands === 'string' ? JSON.parse(row.eq_bands) : row.eq_bands } catch { bands = [] }
+      try {
+        saveEditorSession({
+          trackPath: row.track_path,
+          start: Number.isFinite(Number(row.start_seconds)) ? Number(row.start_seconds) : 0,
+          end: Number.isFinite(Number(row.end_seconds)) ? Number(row.end_seconds) : 0,
+          speed: Number.isFinite(Number(row.speed)) ? Number(row.speed) : 1,
+          reverb: Number.isFinite(Number(row.reverb)) ? Number(row.reverb) : 0,
+          distortion: Number.isFinite(Number(row.distortion)) ? Number(row.distortion) : 0,
+          eqBands: Array.isArray(bands) ? bands.slice(0, 10).map(value => Number(value)) : Array(10).fill(0)
+        })
+      } catch { /* untrusted or malformed editor sessions are skipped */ }
     }
     const jobStatuses = new Set(['queued','downloading','paused','finished','error','cancelled'])
     for (const row of Array.isArray(backup.downloadJobs) ? backup.downloadJobs : []) {
