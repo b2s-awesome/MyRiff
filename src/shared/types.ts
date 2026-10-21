@@ -33,6 +33,33 @@ export interface AppReleaseCheck {
   releases: AppRelease[]
 }
 
+export type MetadataExportEntryState = 'pending' | 'removed' | 'skipped'
+
+export interface MetadataExportEntry {
+  path: string
+  sourcePath: string
+  size: number
+  mtimeMs: number
+  sha256: string
+  state: MetadataExportEntryState
+  note?: string
+}
+
+export interface MetadataExportOperation {
+  id: number
+  createdAt: number
+  description: string
+  entries: MetadataExportEntry[]
+  undone: boolean
+}
+
+export interface MetadataExportUndoResult {
+  operationId: number | null
+  description: string | null
+  removedPaths: string[]
+  skipped: Array<{ path: string; reason: string }>
+}
+
 export interface Track {
   path: string
   title: string
