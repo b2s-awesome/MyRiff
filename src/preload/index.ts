@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppSettings, AppReleaseCheck, UpdateChannel, AcousticSimilarityReport, DownloadProgress, EditorRequest, EditorSession, PlaybackState, SearchResult, StreamSource, Track, Playlist, PlaylistFolder, LyricsResult, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, DuplicateGroup, MetadataSuggestion, RemotePlaylistPreview, SavedPlaylistSource } from '../shared/types'
+import type { AppSettings, AppReleaseCheck, UpdateChannel, AcousticSimilarityReport, MetadataExportOperation, MetadataExportUndoResult, DownloadProgress, EditorRequest, EditorSession, PlaybackState, SearchResult, StreamSource, Track, Playlist, PlaylistFolder, LyricsResult, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, DuplicateGroup, MetadataSuggestion, RemotePlaylistPreview, SavedPlaylistSource } from '../shared/types'
 
 const api = {
   selectMusicFolder: () => ipcRenderer.invoke('dialog:music-folder') as Promise<string | null>,
@@ -75,7 +75,9 @@ const api = {
   completeMetadataReview: (trackPath: string) => ipcRenderer.invoke('metadata:review-complete', trackPath) as Promise<boolean>,
   searchMetadata: (trackPath: string) => ipcRenderer.invoke('metadata:search', trackPath) as Promise<MetadataSuggestion[]>,
   exportMetadataCopy: (trackPath: string, suggestion: MetadataSuggestion) => ipcRenderer.invoke('metadata:export-copy', trackPath, suggestion) as Promise<string|false>,
-  bulkExportMetadataCopies: (trackPaths: string[], overrides: { artist?: string; album?: string; year?: number | null; titleTemplate?: string }) => ipcRenderer.invoke('metadata:bulk-export-copies', trackPaths, overrides) as Promise<{ folder: string; successes: string[]; failures: Array<{ path: string; error: string }> } | null>,
+  bulkExportMetadataCopies: (trackPaths: string[], overrides: { artist?: string; album?: string; year?: number | null; titleTemplate?: string }) => ipcRenderer.invoke('metadata:bulk-export-copies', trackPaths, overrides) as Promise<{ folder: string; successes: string[]; failures: Array<{ path: string; error: string }>; undoTracked?: number } | null>,
+  getLatestMetadataExport: () => ipcRenderer.invoke('metadata:latest-export') as Promise<MetadataExportOperation | null>,
+  undoLastMetadataExport: () => ipcRenderer.invoke('metadata:undo-last-export') as Promise<MetadataExportUndoResult>,
   getWaveform: (trackPath: string, buckets?: number) => ipcRenderer.invoke('audio:waveform', trackPath, buckets) as Promise<number[]>,
   analyseLoudness: (trackPath: string) => ipcRenderer.invoke('audio:analyse-loudness', trackPath) as Promise<{ inputLufs: number; gainDb: number; truePeakDb: number|null; tracks: Track[] }>,
   exportPlaylistFile: (id: number, format: 'm3u'|'csv'|'txt') => ipcRenderer.invoke('playlist:export-file', id, format),
