@@ -93,6 +93,7 @@ export default function App() {
   const [editProgress, setEditProgress] = useState<number|null>(null)
   const [editorSessionStatus, setEditorSessionStatus] = useState('Choose a local track to edit.')
   const editorSessionReadyPathRef = useRef('')
+  const editorSessionSaveTokenRef = useRef(0)
   const [lyrics, setLyrics] = useState<LyricsResult | null>(null)
   const [lyricLines, setLyricLines] = useState<LyricLine[]>(defaultLines)
   const [lyricsBusy, setLyricsBusy] = useState(false)
@@ -261,17 +262,18 @@ export default function App() {
     const trackPath = selectedEditorPath
     if (!trackPath || editorSessionReadyPathRef.current !== trackPath) return
     let cancelled = false
+    const saveToken = ++editorSessionSaveTokenRef.current
     setEditorSessionStatus('Unsaved editor changes…')
     const timer = window.setTimeout(() => {
       void window.myriff.saveEditorSession({
         trackPath, start: editStart, end: editEnd, speed: editSpeed,
         reverb: editReverb, distortion: editDistortion, eqBands: editEqBands
       }).then(session => {
-        if (!cancelled && editorSessionReadyPathRef.current === trackPath) {
+        if (!cancelled && saveToken === editorSessionSaveTokenRef.current && editorSessionReadyPathRef.current === trackPath) {
           setEditorSessionStatus(`Saved locally at ${new Date(session.updatedAt).toLocaleTimeString()}.`)
         }
       }).catch(error => {
-        if (!cancelled && editorSessionReadyPathRef.current === trackPath) {
+        if (!cancelled && saveToken === editorSessionSaveTokenRef.current && editorSessionReadyPathRef.current === trackPath) {
           setEditorSessionStatus(error instanceof Error ? `Could not save edit session: ${error.message}` : 'Could not save this editor session.')
         }
       })
@@ -281,6 +283,7 @@ export default function App() {
 
   const forgetEditorSession = useCallback(async () => {
     if (!selectedEditorPath) return
+    editorSessionSaveTokenRef.current += 1
     try {
       const removed = await window.myriff.deleteEditorSession(selectedEditorPath)
       setEditorSessionStatus(removed ? 'Saved edit session removed. Current controls are unchanged.' : 'There was no saved edit session for this track.')
