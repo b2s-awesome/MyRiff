@@ -12,7 +12,7 @@ const defaults: AppSettings = {
   effectChain: ['eq', 'distortion', 'reverb'], effectsBypass: false, crossfadeSeconds: 0, normalizeLoudness: false, loudnessTargetLufs: -14,
   audioOutputDeviceId: '', sleepTimerMinutes: 0, viewMode: 'grid', groupBy: 'album', autoWatchFolders: false, duplicateScanMode: 'both',
   uiDensity: 'comfortable', cornerRadius: 14, uiScale: 100, sidebarWidth: 238, gridColumns: 0, animationsEnabled: true,
-  showArtworkBackground: true, showVisualizer: true, visualizerStyle: 'bars', visualizerSensitivity: 1, defaultPage: 'library',
+  showArtworkBackground: true, showVisualizer: true, visualizerStyle: 'bars', visualizerSensitivity: 1, visualizerLayouts: [], defaultPage: 'library',
   showTrackNumbers: true, showYear: true, showGenre: true, confirmDestructiveActions: true,
   keyboardShortcuts: { playPause: 'Space', next: 'MediaTrackNext', previous: 'MediaTrackPrevious', search: 'Ctrl+K', queue: 'Q', favorite: 'F' },
   audioProfiles: [], historyEnabled: true, historyLimit: 500, autoEnrichMetadata: false, metadataProvider: 'musicbrainz',
