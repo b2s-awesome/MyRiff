@@ -209,6 +209,17 @@ export interface PlaybackState {
   queuePaths: string[]
 }
 
+export interface EditorSession {
+  trackPath: string
+  start: number
+  end: number
+  speed: number
+  reverb: number
+  distortion: number
+  eqBands: number[]
+  updatedAt: number
+}
+
 export interface EditorRequest {
   inputPath: string
   outputPath: string
