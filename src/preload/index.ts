@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppSettings, DownloadProgress, EditorRequest, EditorSession, PlaybackState, SearchResult, StreamSource, Track, Playlist, PlaylistFolder, LyricsResult, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, DuplicateGroup, MetadataSuggestion, RemotePlaylistPreview, SavedPlaylistSource } from '../shared/types'
+import type { AppSettings, AcousticSimilarityReport, DownloadProgress, EditorRequest, EditorSession, PlaybackState, SearchResult, StreamSource, Track, Playlist, PlaylistFolder, LyricsResult, SmartPlaylist, SmartPlaylistRule, TrackBookmark, ListeningHistoryItem, DuplicateGroup, MetadataSuggestion, RemotePlaylistPreview, SavedPlaylistSource } from '../shared/types'
 
 const api = {
   selectMusicFolder: () => ipcRenderer.invoke('dialog:music-folder') as Promise<string | null>,
@@ -34,6 +34,7 @@ const api = {
   deletePlaylistSource: (id: number) => ipcRenderer.invoke('playlist:source-delete', id) as Promise<boolean>,
   syncPlaylistSource: (id: number) => ipcRenderer.invoke('playlist:source-sync', id) as Promise<string>,
   searchStreams: (query: string, source: StreamSource) => ipcRenderer.invoke('stream:search', query, source) as Promise<SearchResult[]>,
+  analyseAcousticSimilarity: (seedPath: string, candidatePaths: string[]) => ipcRenderer.invoke('radio:acoustic-similarity', seedPath, candidatePaths) as Promise<AcousticSimilarityReport>,
   playStream: (url: string) => ipcRenderer.invoke('stream:play', url) as Promise<string>,
   previewPlaylist: (url: string) => ipcRenderer.invoke('stream:preview-playlist', url) as Promise<RemotePlaylistPreview>,
   importPlaylist: (url: string, name: string) => ipcRenderer.invoke('stream:import-playlist', url, name),
