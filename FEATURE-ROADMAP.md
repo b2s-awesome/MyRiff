@@ -56,7 +56,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Remote search/playback adapters through yt-dlp for supported sources.
 - [x] Local Radio page that generates a transparent metadata-based similarity queue.
 - [x] Discord Rich Presence integration hook, global media shortcuts, tray controls, optional sleep inhibition.
-- [ ] Audio-fingerprint similarity and “more like this” recommendations beyond metadata heuristics.
+- [x] Optional cached local acoustic similarity for Local Radio. A bounded FFmpeg decode compares segment-level spectral/chroma features, caches by file identity and feature version, and sends no audio off-device; the ranking remains a lightweight similarity heuristic, not a trained recommendation model.
 - [x] Saved visualiser layouts with per-layout style, sensitivity and enabled state; settings IPC validates entries and limits them to 30. Arbitrary shader packs remain planned.
 - [ ] Full system media-session integration and volume hotkeys validated across Windows/macOS/Linux.
 - [ ] Verified Discord artwork handling for per-track art; current RPC uses a configured app asset key.
@@ -70,7 +70,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Portable data mode with a startup marker, database checkpoint, data-folder migration and restart-on-switch (needs packaged-runtime validation).
 - [x] App-scoped shortcut capture with collision detection and clearable bindings, plus independently enabled/captured OS-global media and MyRiff-volume shortcuts. Global bindings are validated for known actions and duplicate accelerators; registration failures are logged because the OS or another app may reserve a key.
 - [x] Customisation profile import/export independent of the full database backup; imported values are filtered and range-validated.
-- [ ] In-app update channel and safe rollback.
+- [~] On-demand stable/preview release browser with platform-matched installer selection and a full MyRiff backup before opening an installer. Applying, downgrading and rollback remain manual; unattended binary replacement is intentionally not enabled.
 - [x] Dependency-aware typecheck, regression tests, renderer/main build and Windows/macOS/Linux packaging passed on GitHub Actions. This hardening branch adds a packaged renderer/preload startup smoke test for all OSes and commits the generated lockfile after a green main-branch matrix. Interactive UI automation, audio-device integration and listening-quality tests remain planned.
 
 ## Release gates
