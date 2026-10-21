@@ -22,12 +22,12 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Audio profiles that can match artist, genre or output device.
 - [x] ReplayGain/loudness analysis and per-track gain metadata.
 - [x] Independent pitch shifting and tempo-preserving time stretch are wired through the SoundTouch worklet; the fallback intentionally couples pitch and speed. Needs packaged runtime/audio quality validation before being called release-ready.
-- [ ] True gapless playback across codec/platform combinations.
+- [~] Overlapping crossfade is implemented with a preloaded second deck. Exact sample-gapless playback across codec and platform combinations is not guaranteed by Chromium media-element decoding; it needs a dedicated native decoder/output backend and device-level listening tests, so it is not claimed for this Electron release.
 - [x] Overlapping crossfade using a preloaded second media element and shared DSP graph. Codec-specific quality needs real audio-device testing; exact sample-gapless playback remains unguaranteed.
 - [x] Same-position DSP-bypass A/B comparison and ordered effect-chain graph UI. A separate synchronised dual-deck A/B transport remains unimplemented.
 - [x] Parametric 10-band EQ with editable centre frequencies, configurable Q and stereo width, available in live playback, saved audio profiles and FFmpeg exports.
 - [~] Basic audio output diagnostics: low-level left/centre/right test tones with explicit output-device routing when the runtime supports it. A full per-headphone frequency-response calibration and auto-EQ wizard remains planned.
-- [ ] Native exclusive/bit-perfect output and explicit sample-rate/bit-depth controls.
+- [~] Native exclusive-mode, bit-perfect output and explicit hardware sample-rate/bit-depth selection are not exposed reliably by Electron's Chromium Web Audio pipeline. These require a separate native audio backend (and per-OS device tests); the current Web Audio DSP graph necessarily processes/resamples audio.
 
 ## Playlist Studio and downloads
 
@@ -39,7 +39,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Opt-in scheduler for periodic playlist sync with a configurable interval; runs while the app is open. Per-source rules and richer notifications remain partial.
 - [x] FIFO download queue with a consistent global concurrency cap, pause/cancel handling, persisted activity and a Downloads-page retry/resume action after restart. Retrying reuses the source URL and format; partial-file continuation depends on yt-dlp and the source.
 - [x] Opt-in post-download metadata review queue persists across restarts and backups. Downloaded tracks are indexed, queued when MusicBrainz enrichment is enabled, confidence-scored suggestions are fetched for review, and tagged-copy export leaves the original untouched.
-- [ ] Spotify/Apple Music playlist resolution is conditional on public access/exported playlist metadata; no unsupported private API or DRM bypass.
+- [~] Playlist transfer supports compatible public playlist URLs and TuneMyMusic-assisted transfer. Private Spotify/Apple Music APIs and DRM bypass are intentionally unsupported; for inaccessible playlists, export the playlist through the source service or use TuneMyMusic.
 
 ## Audio editor and lyrics
 
@@ -58,8 +58,8 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Discord Rich Presence integration hook, global media shortcuts, tray controls, optional sleep inhibition.
 - [x] Optional cached local acoustic similarity for Local Radio. A bounded FFmpeg decode compares segment-level spectral/chroma features, caches by file identity and feature version, and sends no audio off-device; the ranking remains a lightweight similarity heuristic, not a trained recommendation model.
 - [x] Saved visualiser layouts with per-layout style, sensitivity and enabled state; settings IPC validates entries and limits them to 30. Arbitrary shader packs remain planned.
-- [ ] Full system media-session integration and volume hotkeys validated across Windows/macOS/Linux.
-- [ ] Verified Discord artwork handling for per-track art; current RPC uses a configured app asset key.
+- [~] Renderer Media Session API metadata/transport handlers and configurable OS-global media/volume shortcuts are implemented. Full hardware/desktop-shell behaviour differs by OS version and compositor, so production QA still needs real Windows/macOS/Linux sessions and physical media-key tests.
+- [~] Discord Rich Presence is implemented, but artwork uses a registered Discord application asset key rather than uploading arbitrary per-track artwork. Per-track art would need a supported hosted-asset flow and further permission/platform testing; the current limitation is explicit in the UI/docs.
 
 ## Personalisation, privacy and release engineering
 
@@ -76,7 +76,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 ## Release gates
 
 1. **0.2.x foundation:** setup/recovery, reliable install and typecheck, library/playlist stability, local radio, Playlist Studio and settings persistence.
-2. **0.3.x playback:** SoundTouch integration for independent pitch/tempo, true crossfade/gapless strategy, A/B DSP and output validation.
+2. **0.3.x playback:** validate SoundTouch pitch/tempo under real listening tests; improve codec-specific transition reliability. Sample-perfect gapless and bit-perfect/exclusive audio require a separate native audio backend and are not promises of the current Electron Web Audio architecture.
 3. **0.4.x editor/discovery:** full waveform editing, smarter matching, provider adapters and metadata enrichment.
 4. **1.0:** cross-platform packaging, upgrade/rollback, accessibility, security review and regression testing.
 
