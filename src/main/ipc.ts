@@ -24,6 +24,12 @@ let stopLibraryWatch: (() => Promise<void>) | null = null
 let watcherRoot = ''
 let playlistSchedulerTimer: ReturnType<typeof setInterval> | null = null
 const scheduledPlaylistSources = new Set<number>()
+async function indexDownloadedFile(filePath: string) {
+  try { await scanMusicFolder(path.dirname(filePath)) }
+  catch (error) { console.warn('Downloaded file metadata scan failed:', error) }
+  const settings = store.getSettings()
+  if (settings.autoEnrichMetadata && settings.metadataProvider === 'musicbrainz') store.enqueueMetadataReview(filePath)
+}
 function configurePlaylistScheduler(getWindow: () => BrowserWindow | null) {
   if (playlistSchedulerTimer) clearInterval(playlistSchedulerTimer)
   playlistSchedulerTimer = setInterval(() => {
@@ -45,7 +51,7 @@ function configurePlaylistScheduler(getWindow: () => BrowserWindow | null) {
           }
         }, async (filePath, title, downloadId, sourceUrl, format) => {
           store.addDownload({ id: downloadId, title, filePath, sourceUrl, format })
-          try { await scanMusicFolder(path.dirname(filePath)) } catch (error) { console.warn('Scheduled download indexing failed:', error) }
+          await indexDownloadedFile(filePath)
         }, true)
       } catch (error) {
         scheduledPlaylistSources.delete(source.id)
@@ -220,7 +226,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       if (p.status === 'finished') touchPlaylistSource(id)
     }, async (filePath, title, downloadId, sourceUrl, fmt) => {
       store.addDownload({ id: downloadId, title, filePath, sourceUrl, format: fmt })
-      try { await scanMusicFolder(path.dirname(filePath)) } catch (err) { console.warn('Downloaded file metadata scan failed:', err) }
+      await indexDownloadedFile(filePath)
     }, true)
     return jobId
   })
@@ -235,7 +241,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     // The stream module reports its own identifier; forward updates as events rather than blocking the renderer.
     const jobId = startDownload(url, format, store.getSettings(), progress => { const p = { ...progress, includePlaylist }; saveDownloadJob(p); if (!event.sender.isDestroyed()) event.sender.send('download:progress', p) }, async (filePath, title, downloadId, sourceUrl, fmt) => {
       store.addDownload({ id: downloadId, title, filePath, sourceUrl, format: fmt })
-      try { await scanMusicFolder(path.dirname(filePath)) } catch (err) { console.warn('Downloaded file metadata scan failed:', err) }
+      await indexDownloadedFile(filePath)
     }, includePlaylist)
     return jobId
   })
@@ -318,6 +324,8 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     if (successes.length) { try { await scanMusicFolder(outputFolder) } catch (error) { console.warn('Bulk tagged-copy indexing deferred:', error) } }
     return { folder: outputFolder, successes, failures }
   })
+  ipcMain.handle('metadata:review-queue', () => store.listMetadataReviewQueue())
+  ipcMain.handle('metadata:review-complete', (_e, trackPath: string) => store.completeMetadataReview(String(trackPath || '')))
   ipcMain.handle('metadata:search', (_e, trackPath: string) => {
     const settings = store.getSettings()
     if (settings.metadataProvider === 'off') throw new Error('Metadata lookup is disabled in Settings.')
