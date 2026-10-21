@@ -17,6 +17,7 @@ import { createSmartPlaylist, listSmartPlaylists, deleteSmartPlaylist, getSmartP
 import { basename, extname, resolve, dirname } from 'node:path'
 import { analyseReplayGain as analyseTrackLoudness } from './audioAnalysis'
 import { standardUserDataPath, portableMarkerPath, portableUserDataPath } from './appPaths'
+import { configureGlobalShortcuts } from './globalShortcuts'
 
 let blockerId: number | null = null
 let playingNow = false
@@ -161,6 +162,20 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     if (patch.eqQ !== undefined && (!Number.isFinite(patch.eqQ) || patch.eqQ < 0.3 || patch.eqQ > 8)) throw new Error('EQ bandwidth must be between 0.3 and 8.')
     if (patch.eqFrequencies !== undefined && (!Array.isArray(patch.eqFrequencies) || patch.eqFrequencies.length !== 10 || patch.eqFrequencies.some(v => typeof v !== 'number' || !Number.isFinite(v) || v < 20 || v > 20000))) throw new Error('EQ centre frequencies must contain ten values between 20 and 20000 Hz.')
     if (patch.stereoWidth !== undefined && (!Number.isFinite(patch.stereoWidth) || patch.stereoWidth < 0 || patch.stereoWidth > 2)) throw new Error('Stereo width must be between 0 and 2.')
+    if (patch.globalShortcutsEnabled !== undefined && typeof patch.globalShortcutsEnabled !== 'boolean') throw new Error('Global shortcuts enabled must be a boolean.')
+    if (patch.globalKeyboardShortcuts !== undefined) {
+      const values = patch.globalKeyboardShortcuts
+      const keys = ['playPause', 'next', 'previous', 'volumeUp', 'volumeDown']
+      if (!values || typeof values !== 'object' || Array.isArray(values) || Object.keys(values).some(key => !keys.includes(key))) throw new Error('Global shortcut settings contain an unknown action.')
+      const bindings = Object.values(values)
+      if (bindings.some(value => typeof value !== 'string' || value.length > 80)) throw new Error('Global shortcut bindings must be text shorter than 80 characters.')
+      const used = new Set<string>()
+      for (const binding of bindings) {
+        const normalized = binding.trim().toLowerCase()
+        if (normalized && used.has(normalized)) throw new Error('Two OS-global actions cannot use the same shortcut.')
+        if (normalized) used.add(normalized)
+      }
+    }
     if (patch.visualizerLayouts !== undefined) {
       const layouts = patch.visualizerLayouts
       const styles = new Set(['bars', 'wave', 'mirror', 'spectrum', 'dots'])
@@ -174,6 +189,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       }
     }
     const settings = store.setSettings(patch)
+    if (patch.globalShortcutsEnabled !== undefined || patch.globalKeyboardShortcuts !== undefined) configureGlobalShortcuts(settings)
     if (patch.inhibitSleep !== undefined) refreshPowerBlocker(settings, playingNow)
     if (patch.autoWatchFolders !== undefined || patch.musicFolder !== undefined) await configureWatcher(settings)
     if (patch.playlistAutoSync !== undefined || patch.playlistSyncIntervalHours !== undefined) configurePlaylistScheduler(win)
@@ -438,7 +454,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       'animationsEnabled','showArtworkBackground','showVisualizer','visualizerStyle','visualizerSensitivity','visualizerLayouts','viewMode',
       'groupBy','showTrackNumbers','showYear','showGenre','defaultPage','useSystemTitlebar','eqPreset','eqBands','eqFrequencies',
       'effectTempo','effectPitch','effectReverb','effectDistortion','eqQ','stereoWidth','effectChain','effectsBypass','crossfadeSeconds',
-      'normalizeLoudness','loudnessTargetLufs','audioOutputDeviceId','audioProfiles','keyboardShortcuts'
+      'normalizeLoudness','loudnessTargetLufs','audioOutputDeviceId','audioProfiles','keyboardShortcuts','globalShortcutsEnabled','globalKeyboardShortcuts'
     ] as const
     const values: Record<string, unknown> = {}
     for (const key of profileKeys) values[key] = settings[key]
@@ -462,7 +478,7 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
       'animationsEnabled','showArtworkBackground','showVisualizer','visualizerStyle','visualizerSensitivity','visualizerLayouts','viewMode',
       'groupBy','showTrackNumbers','showYear','showGenre','defaultPage','useSystemTitlebar','eqPreset','eqBands','eqFrequencies',
       'effectTempo','effectPitch','effectReverb','effectDistortion','eqQ','stereoWidth','effectChain','effectsBypass','crossfadeSeconds',
-      'normalizeLoudness','loudnessTargetLufs','audioOutputDeviceId','audioProfiles','keyboardShortcuts'
+      'normalizeLoudness','loudnessTargetLufs','audioOutputDeviceId','audioProfiles','keyboardShortcuts','globalShortcutsEnabled','globalKeyboardShortcuts'
     ])
     const current = store.getSettings() as unknown as Record<string, unknown>
     const patch: Record<string, unknown> = {}
@@ -509,6 +525,19 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
           return true
         })
         if (!valid) continue
+      }
+      if (key === 'globalKeyboardShortcuts') {
+        const shortcuts = value as unknown
+        const keys = ['playPause', 'next', 'previous', 'volumeUp', 'volumeDown']
+        if (!shortcuts || typeof shortcuts !== 'object' || Array.isArray(shortcuts) || Object.keys(shortcuts).some(shortcut => !keys.includes(shortcut)) || Object.values(shortcuts as Record<string, unknown>).some(binding => typeof binding !== 'string' || binding.length > 80)) continue
+        const used = new Set<string>()
+        let duplicate = false
+        for (const binding of Object.values(shortcuts as Record<string, string>)) {
+          const normalized = binding.trim().toLowerCase()
+          if (normalized && used.has(normalized)) duplicate = true
+          if (normalized) used.add(normalized)
+        }
+        if (duplicate) continue
       }
       if (key === 'keyboardShortcuts') {
         const allowedKeys = ['playPause','next','previous','search','queue','favorite']
