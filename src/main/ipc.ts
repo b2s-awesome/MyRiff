@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
 import path from 'node:path'
-import type { AppSettings, EditorRequest, EditorSession, PlaybackState, StreamSource, DownloadFormat } from '../shared/types'
+import type { AppSettings, AppRelease, AppReleaseAsset, AppReleaseCheck, EditorRequest, EditorSession, PlaybackState, StreamSource, DownloadFormat, UpdateChannel } from '../shared/types'
 import * as store from './db'
 import { scanMusicFolder } from './library'
 import { startDownload, searchStreams, streamUrl, importRemotePlaylist, previewRemotePlaylist, cancelDownload, pauseDownload } from './streaming'
@@ -439,6 +439,70 @@ export function registerIpc(win: () => BrowserWindow | null, mini: (enabled: boo
     return { playlistId: playlist.id, playlistName: uniqueName, total: entries.length, found: matched.length, missing }
   })
   ipcMain.handle('external:open-tunemymusic', async () => { await shell.openExternal('https://www.tunemymusic.com/'); return true })
+
+  ipcMain.handle('updates:list', async (_e, requestedChannel: unknown): Promise<AppReleaseCheck> => {
+    if (requestedChannel !== 'stable' && requestedChannel !== 'preview') throw new Error('Choose either the stable or preview release channel.')
+    const channel = requestedChannel as UpdateChannel
+    const response = await fetch('https://api.github.com/repos/b2s-awesome/MyRiff/releases?per_page=30', {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'MyRiff-Release-Checker' },
+      signal: AbortSignal.timeout(12_000)
+    }).catch(error => { throw new Error(`Could not reach GitHub Releases: ${error instanceof Error ? error.message : 'network error'}`) })
+    if (!response.ok) {
+      if (response.status === 404) throw new Error('GitHub Releases are not visible anonymously. Check the repository visibility or publish a public release feed.')
+      if (response.status === 403 || response.status === 429) throw new Error('GitHub rate-limited the release check. Wait a little and try again.')
+      throw new Error(`GitHub Releases returned HTTP ${response.status}.`)
+    }
+    const payload = await response.json() as Array<{
+      tag_name?: unknown; name?: unknown; body?: unknown; published_at?: unknown; draft?: unknown
+      prerelease?: unknown; html_url?: unknown; assets?: unknown
+    }>
+    const safeReleaseUrl = (value: unknown, allowDownload: boolean): string | null => {
+      if (typeof value !== 'string') return null
+      try {
+        const url = new URL(value)
+        if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.username || url.password) return null
+        const base = '/b2s-awesome/MyRiff/releases/'
+        if (!url.pathname.startsWith(base)) return null
+        if (!allowDownload && url.pathname.startsWith(base + 'download/')) return null
+        return url.href
+      } catch { return null }
+    }
+    const releases: AppRelease[] = []
+    for (const record of payload) {
+      if (record.draft === true || (channel === 'stable' && record.prerelease === true)) continue
+      const tag = typeof record.tag_name === 'string' ? record.tag_name : ''
+      const url = safeReleaseUrl(record.html_url, false)
+      if (!tag || !/^[A-Za-z0-9._-]{1,100}$/.test(tag) || !url) continue
+      const rawAssets = Array.isArray(record.assets) ? record.assets as Array<{name?: unknown; size?: unknown; browser_download_url?: unknown}> : []
+      const assets: AppReleaseAsset[] = rawAssets.slice(0, 100).flatMap(asset => {
+        const assetUrl = safeReleaseUrl(asset.browser_download_url, true)
+        const name = typeof asset.name === 'string' ? asset.name.slice(0, 240) : ''
+        if (!assetUrl || !name || name.includes('..') || /[\\/]/.test(name)) return []
+        return [{ name, url: assetUrl, size: typeof asset.size === 'number' && Number.isFinite(asset.size) ? Math.max(0, asset.size) : 0 }]
+      })
+      releases.push({
+        tag,
+        name: (typeof record.name === 'string' && record.name.trim() ? record.name : tag).slice(0, 200),
+        body: typeof record.body === 'string' ? record.body.slice(0, 4000) : '',
+        publishedAt: typeof record.published_at === 'string' ? record.published_at : null,
+        prerelease: record.prerelease === true,
+        url,
+        assets
+      })
+      if (releases.length >= 20) break
+    }
+    return { appVersion: app.getVersion(), platform: process.platform, arch: process.arch, channel, checkedAt: new Date().toISOString(), releases }
+  })
+  ipcMain.handle('updates:open-url', async (_e, rawUrl: unknown) => {
+    if (typeof rawUrl !== 'string') throw new Error('A valid GitHub release URL is required.')
+    let url: URL
+    try { url = new URL(rawUrl) } catch { throw new Error('A valid GitHub release URL is required.') }
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.username || url.password || !url.pathname.startsWith('/b2s-awesome/MyRiff/releases/')) {
+      throw new Error('For safety, MyRiff only opens release links hosted on its GitHub release page.')
+    }
+    await shell.openExternal(url.href)
+    return true
+  })
   ipcMain.handle('backup:export', async () => {
     const result = await showSaveDialog({ title: 'Export MyRiff backup', defaultPath: `MyRiff-Backup-${new Date().toISOString().slice(0,10)}.json`, filters: [{ name: 'MyRiff backup', extensions: ['json'] }] })
     if (result.canceled || !result.filePath) return false
