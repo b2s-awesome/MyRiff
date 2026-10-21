@@ -9,6 +9,7 @@ import { registerIpc } from './ipc'
 import { startStreamServer, stopStreamServer } from './streaming'
 import { stopDiscord } from './discord'
 import { activatePortableDataPath } from './appPaths'
+import { configureGlobalShortcuts, setGlobalShortcutActionHandler } from './globalShortcuts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 activatePortableDataPath()
@@ -24,6 +25,7 @@ const miniSize = { width: 510, height: 170 }
 const normalSize = { width: 1360, height: 900 }
 
 function sendPlayerAction(action: string) { mainWindow?.webContents.send('player:action', action); if (!mainWindow) createWindow() }
+setGlobalShortcutActionHandler(sendPlayerAction)
 function makeTray() {
   if (tray) return
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#a78bfa"/><path d="M40 8v31a10 10 0 1 1-6-9V19L19 23v23a10 10 0 1 1-6-9V19c0-2 1-4 4-4z" fill="white"/></svg>`
@@ -136,11 +138,7 @@ app.whenReady().then(async () => {
   })
   registerIpc(() => mainWindow, setMiniPlayer, () => streamPort)
   createWindow(); makeTray()
-  globalShortcut.register('MediaPlayPause', () => sendPlayerAction('toggle'))
-  globalShortcut.register('MediaNextTrack', () => sendPlayerAction('next'))
-  globalShortcut.register('MediaPreviousTrack', () => sendPlayerAction('previous'))
-  globalShortcut.register('VolumeUp', () => sendPlayerAction('volume-up'))
-  globalShortcut.register('VolumeDown', () => sendPlayerAction('volume-down'))
+  configureGlobalShortcuts(getSettings())
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })
 
