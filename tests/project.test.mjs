@@ -423,6 +423,8 @@ test('visualiser layouts can be saved locally, validated, applied and removed', 
   assert.ok(types.includes('visualizerLayouts: VisualizerLayout[]'))
   assert.ok(db.includes("visualizerLayouts: []"))
   assert.ok(ipc.includes('patch.visualizerLayouts !== undefined'))
+  assert.ok(ipc.includes("'visualizerLayouts','viewMode'"))
+  assert.ok(ipc.includes("if (key === 'visualizerLayouts')"))
   assert.ok(ipc.includes('Save up to 30 visualiser layouts.'))
   assert.ok(app.includes('saveVisualizerLayout'))
   assert.ok(app.includes('applyVisualizerLayout'))
