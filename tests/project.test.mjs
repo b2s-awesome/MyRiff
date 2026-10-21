@@ -13,7 +13,7 @@ test('package exposes development, validation and all platform build commands', 
 
 test('customisation schema includes the core appearance, playback and privacy controls', () => {
   const source = read('src/shared/types.ts')
-  for (const field of ['theme', 'accent', 'dynamicAccent', 'customCss', 'bannerPath', 'uiDensity', 'cornerRadius', 'uiScale', 'sidebarWidth', 'gridColumns', 'visualizerStyle', 'keyboardShortcuts', 'audioProfiles', 'portableMode', 'historyEnabled', 'confirmDestructiveActions']) {
+  for (const field of ['theme', 'accent', 'dynamicAccent', 'customCss', 'bannerPath', 'uiDensity', 'cornerRadius', 'uiScale', 'sidebarWidth', 'gridColumns', 'visualizerStyle', 'keyboardShortcuts', 'audioProfiles', 'portableMode', 'historyEnabled', 'confirmDestructiveActions', 'updateChannel']) {
     assert.match(source, new RegExp(`\\b${field}\\s*:`), `missing setting ${field}`)
   }
 })
@@ -520,4 +520,27 @@ test('Local Radio can optionally rank local recommendations by cached spectral s
   assert.ok(radio.includes('stableTieBreak'))
   assert.ok(radio.includes('No audio is uploaded.'))
   assert.ok(radio.includes('setAcousticRanking(true)'))
+})
+
+test('release manager checks stable/preview feeds on demand and backs up data before opening an installer', () => {
+  const types = read('src/shared/types.ts')
+  const db = read('src/main/db.ts')
+  const ipc = read('src/main/ipc.ts')
+  const preload = read('src/preload/index.ts')
+  const settings = read('src/renderer/src/components/AdvancedSettings.tsx')
+  assert.match(types, /export type UpdateChannel = 'stable' \| 'preview'/)
+  assert.match(types, /updateChannel: UpdateChannel/)
+  assert.match(db, /updateChannel: 'preview'/)
+  assert.match(ipc, /ipcMain\.handle\('updates:list'/)
+  assert.match(ipc, /isAllowedGitHubReleaseUrl/)
+  assert.match(ipc, /api\.github\.com\/repos\/b2s-awesome\/MyRiff\/releases/)
+  assert.match(ipc, /updates:open-url/)
+  assert.match(preload, /listAppReleases:/)
+  assert.match(preload, /openReleaseUrl:/)
+  assert.ok(settings.includes('Updates & recovery'))
+  assert.ok(settings.includes('Stable releases only'))
+  assert.ok(settings.includes('Preview + stable releases'))
+  assert.match(settings, /const backupPath = await window\.myriff\.exportBackup\(\)/)
+  assert.ok(settings.includes('Back up & open installer'))
+  assert.match(settings, /onClick=\{checkReleases\}/)
 })
