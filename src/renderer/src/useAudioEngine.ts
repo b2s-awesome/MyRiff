@@ -5,6 +5,7 @@ import type { RefObject } from 'react'
 import type { AppSettings, EffectName } from '../../shared/types'
 
 const FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+type AudioContextWithSink = AudioContext & { setSinkId?: (deviceId: string) => Promise<void> }
 
 export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, settings: AppSettings | null, nextAudioRef?: RefObject<HTMLAudioElement | null>) {
   const contextRef = useRef<AudioContext | null>(null)
@@ -22,6 +23,18 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
   const wetRef = useRef<GainNode | null>(null)
   const reverbMixRef = useRef<GainNode | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
+
+  const setOutputDevice = useCallback(async (deviceId: string) => {
+    const ctx = contextRef.current
+    if (!ctx) return
+    const setSinkId = (ctx as AudioContextWithSink).setSinkId
+    if (typeof setSinkId !== 'function') {
+      if (deviceId) throw new Error('This Electron runtime cannot route processed playback to a selected output device. Choose System default in Audio Settings.')
+      return
+    }
+    try { await setSinkId.call(ctx, deviceId || '') }
+    catch (error) { throw new Error(`Audio output routing failed: ${error instanceof Error ? error.message : 'the selected device could not be opened.'}`) }
+  }, [])
   const widthSplitterRef = useRef<ChannelSplitterNode | null>(null)
   const widthMergerRef = useRef<ChannelMergerNode | null>(null)
   const widthGainsRef = useRef<GainNode[]>([])
@@ -78,6 +91,18 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
       const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
       if (!AudioContextCtor) throw new Error('This environment does not support the Web Audio API.')
       const ctx: AudioContext = new AudioContextCtor()
+      if (settings?.audioOutputDeviceId) {
+        const setSinkId = (ctx as AudioContextWithSink).setSinkId
+        if (typeof setSinkId !== 'function') {
+          await ctx.close().catch(() => undefined)
+          throw new Error('This Electron runtime cannot route processed playback to a selected output device. Choose System default in Audio Settings.')
+        }
+        try { await setSinkId.call(ctx, settings.audioOutputDeviceId) }
+        catch (error) {
+          await ctx.close().catch(() => undefined)
+          throw new Error(`Audio output routing failed: ${error instanceof Error ? error.message : 'the selected device could not be opened.'}`)
+        }
+      }
       const source = ctx.createMediaElementSource(audio)
       const input = ctx.createGain()
       const primaryFadeGain = ctx.createGain(); primaryFadeGain.gain.value = 1
@@ -138,8 +163,6 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
       widthSplitterRef.current = widthSplitter; widthMergerRef.current = widthMerger; widthGainsRef.current = widthGains
       dryRef.current = dry; wetRef.current = wet; reverbMixRef.current = reverbMix; convolverRef.current = convolver; analyserRef.current = analyser
       contextRef.current = ctx
-      const setSinkId = (ctx as AudioContext & { setSinkId?: (id: string) => Promise<void> }).setSinkId
-      if (settings?.audioOutputDeviceId && setSinkId) await setSinkId.call(ctx, settings.audioOutputDeviceId).catch(error => console.warn('Audio output selection failed:', error))
       rebuildGraph()
       if (soundTouch) { const tempo = Math.max(0.5, Math.min(2, settings?.effectTempo ?? 1)); audio.playbackRate = 1; audio.preservesPitch = true; soundTouch.playbackRate.value = tempo; soundTouch.pitch.value = 1; soundTouch.pitchSemitones.value = Math.max(-24, Math.min(24, settings?.effectPitch ?? 0)) }
       if (nextSoundTouch) { nextSoundTouch.playbackRate.value = Math.max(0.5, Math.min(2, settings?.effectTempo ?? 1)); nextSoundTouch.pitch.value = 1; nextSoundTouch.pitchSemitones.value = Math.max(-24, Math.min(24, settings?.effectPitch ?? 0)) }
@@ -236,5 +259,5 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
     widthSplitterRef.current?.disconnect(); widthMergerRef.current?.disconnect(); widthGainsRef.current.forEach(node => node.disconnect())
     contextRef.current?.close().catch(() => undefined)
   }, [])
-  return { ensureGraph, context: contextRef, analyser: analyserRef, crossfadeToNext, handoffToMain, resetCrossfade }
+  return { ensureGraph, setOutputDevice, context: contextRef, analyser: analyserRef, crossfadeToNext, handoffToMain, resetCrossfade }
 }
