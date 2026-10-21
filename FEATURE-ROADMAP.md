@@ -68,7 +68,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Download settings, tool path overrides, streaming priority, keyboard shortcut settings, audio profiles, privacy/history controls.
 - [x] Local SQLite backups/restore, diagnostic report, source-level sanity check and smoke tests.
 - [x] Portable data mode with a startup marker, database checkpoint, data-folder migration and restart-on-switch (needs packaged-runtime validation).
-- [x] App-shortcut capture UI with collision detection and clearable bindings. Separate global-vs-app scope labels and configurable OS-global shortcut registration remain.
+- [x] App-scoped shortcut capture with collision detection and clearable bindings, plus independently enabled/captured OS-global media and MyRiff-volume shortcuts. Global bindings are validated for known actions and duplicate accelerators; registration failures are logged because the OS or another app may reserve a key.
 - [x] Customisation profile import/export independent of the full database backup; imported values are filtered and range-validated.
 - [ ] In-app update channel and safe rollback.
 - [x] Dependency-aware typecheck, regression tests, renderer/main build and Windows/macOS/Linux packaging passed on GitHub Actions. This hardening branch adds a packaged renderer/preload startup smoke test for all OSes and commits the generated lockfile after a green main-branch matrix. Interactive UI automation, audio-device integration and listening-quality tests remain planned.
