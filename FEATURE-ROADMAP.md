@@ -12,7 +12,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 - [x] Watch folders, ratings, favourites, listening history, bookmarks, missing-file cleanup.
 - [x] Duplicate scan by file hash and metadata; CSV inventory export.
 - [x] Metadata suggestions from MusicBrainz and tagged-copy export rather than in-place edits.
-- [ ] One-click undo for library metadata operations. Bulk tag editor is implemented as non-destructive multi-track tagged-copy export; it does not overwrite original files.
+- [x] One-click undo for MyRiff-generated metadata tagged-copy exports. Each generated copy is recorded with its original source path, size, modification time and SHA-256; undo skips changed, missing, symlinked or unverifiable files and removes generated copies from the index. Source files are never deleted or modified. Arbitrary third-party tag edits are not managed by MyRiff.
 - [x] Persistent nested playlist folders with safe folder reassignment/deletion and folder-aware backup restore. A complete drag-and-drop playlist editor remains planned.
 
 ## Playback and Sound Lab
