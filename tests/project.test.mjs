@@ -456,6 +456,18 @@ test('audio output diagnostics use a short quiet panned tone and selected-sink r
   assert.ok(styles.includes('.audio-calibration-panel'))
 })
 
+test('processed playback routes through AudioContext and applies output changes to the live graph', () => {
+  const engine = read('src/renderer/src/useAudioEngine.ts')
+  const app = read('src/renderer/src/App.tsx')
+  assert.ok(engine.includes('type AudioContextWithSink = AudioContext'))
+  assert.ok(engine.includes('const setOutputDevice = useCallback(async (deviceId: string)'))
+  assert.ok(engine.includes('setSinkId.call(ctx, settings.audioOutputDeviceId)'))
+  assert.ok(engine.includes("setSinkId.call(ctx, deviceId || '')"))
+  assert.ok(engine.includes('return { ensureGraph, setOutputDevice,'))
+  assert.ok(app.includes('void setOutputDevice(settings.audioOutputDeviceId).catch'))
+  assert.ok(!app.includes('audio.setSinkId(settings.audioOutputDeviceId)'))
+})
+
 test('visualiser layouts can be saved locally, validated, applied and removed', () => {
   const types = read('src/shared/types.ts')
   const db = read('src/main/db.ts')
