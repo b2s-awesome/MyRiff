@@ -41,8 +41,9 @@ export default function AdvancedSettings({ settings, onChange, audioOutputs, tra
     setCalibrationStatus('Preparing a short, low-level test tone…')
     let context: AudioContext | null = null
     try {
-      context = new AudioContext()
-      const sinkContext = context as AudioContext & { setSinkId?: (deviceId: string) => Promise<void> }
+      const activeContext = new AudioContext()
+      context = activeContext
+      const sinkContext = activeContext as AudioContext & { setSinkId?: (deviceId: string) => Promise<void> }
       const outputId = settings.audioOutputDeviceId
       if (outputId) {
         if (typeof sinkContext.setSinkId !== 'function') {
@@ -50,11 +51,11 @@ export default function AdvancedSettings({ settings, onChange, audioOutputs, tra
         }
         await sinkContext.setSinkId(outputId)
       }
-      await context.resume()
+      await activeContext.resume()
       const oscillator = context.createOscillator()
       const gain = context.createGain()
       const panner = context.createStereoPanner()
-      const now = context.currentTime
+      const now = activeContext.currentTime
       oscillator.type = 'sine'
       oscillator.frequency.setValueAtTime(330, now)
       panner.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), now)
@@ -64,7 +65,7 @@ export default function AdvancedSettings({ settings, onChange, audioOutputs, tra
       gain.gain.linearRampToValueAtTime(0, now + 0.72)
       oscillator.connect(gain)
       gain.connect(panner)
-      panner.connect(context.destination)
+      panner.connect(activeContext.destination)
       oscillator.start(now)
       oscillator.stop(now + 0.75)
       const outputLabel = outputId
@@ -72,13 +73,13 @@ export default function AdvancedSettings({ settings, onChange, audioOutputs, tra
         : 'system default output'
       setCalibrationStatus(`Playing a quiet 330 Hz ${channel} tone on ${outputLabel} for less than one second.`)
       const timer = window.setTimeout(() => {
-        if (calibrationRef.current?.context !== context) return
+        if (calibrationRef.current?.context !== activeContext) return
         calibrationRef.current = null
         setCalibrationBusy(false)
         setCalibrationStatus(`The ${channel} test tone finished. Did it come from the expected speaker or channel?`)
-        void context?.close().catch(() => undefined)
+        void activeContext.close().catch(() => undefined)
       }, 850)
-      calibrationRef.current = { context, oscillator, timer }
+      calibrationRef.current = { context: activeContext, oscillator, timer }
     } catch (error) {
       if (context) void context.close().catch(() => undefined)
       calibrationRef.current = null
