@@ -265,6 +265,7 @@ export default function App() {
     const saveToken = ++editorSessionSaveTokenRef.current
     setEditorSessionStatus('Unsaved editor changes…')
     const timer = window.setTimeout(() => {
+      if (cancelled || saveToken !== editorSessionSaveTokenRef.current || editorSessionReadyPathRef.current !== trackPath) return
       void window.myriff.saveEditorSession({
         trackPath, start: editStart, end: editEnd, speed: editSpeed,
         reverb: editReverb, distortion: editDistortion, eqBands: editEqBands
