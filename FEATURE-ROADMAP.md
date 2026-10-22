@@ -18,7 +18,7 @@ This document tracks the complete feature scope requested for the private MyRiff
 ## Playback and Sound Lab
 
 - [x] Play/pause, previous/next, seek, volume, shuffle, repeat, queue reorder/clear, session restore.
-- [x] Web Audio EQ, presets, reverb, distortion, visualiser, output-device selection where supported.
+- [x] Web Audio EQ, presets, reverb, distortion, visualiser, and processed-output routing through `AudioContext.setSinkId` where the packaged runtime supports it. A live device change retargets the active AudioContext; unsupported or unavailable selections report a clear error instead of silently routing the clean HTML element elsewhere.
 - [x] Audio profiles that can match artist, genre or output device.
 - [x] ReplayGain/loudness analysis and per-track gain metadata.
 - [x] Independent pitch shifting and tempo-preserving time stretch are wired through the SoundTouch worklet; the fallback intentionally couples pitch and speed. Needs packaged runtime/audio quality validation before being called release-ready.
