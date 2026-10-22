@@ -187,10 +187,28 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
   const crossfadeToNext = useCallback((seconds: number) => {
     const ctx = contextRef.current; const primary = primaryFadeGainRef.current?.gain; const secondary = nextFadeGainRef.current?.gain
     if (!ctx || !primary || !secondary || !Number.isFinite(seconds) || seconds <= 0) return false
-    const now = ctx.currentTime; const end = now + Math.max(0.08, Math.min(20, seconds))
+    const now = ctx.currentTime
+    const duration = Math.max(0.08, Math.min(20, seconds))
+    const primaryStart = Math.max(0, Math.min(1, primary.value))
+    const secondaryStart = Math.max(0, Math.min(1, secondary.value))
+    const sampleCount = 257
+    const primaryCurve = new Float32Array(sampleCount)
+    const secondaryCurve = new Float32Array(sampleCount)
+    for (let i = 0; i < sampleCount; i++) {
+      const progress = i / (sampleCount - 1)
+      const angle = progress * Math.PI / 2
+      primaryCurve[i] = primaryStart * Math.cos(angle)
+      secondaryCurve[i] = secondaryStart + (1 - secondaryStart) * Math.sin(angle)
+    }
     primary.cancelScheduledValues(now); secondary.cancelScheduledValues(now)
-    primary.setValueAtTime(primary.value, now); secondary.setValueAtTime(secondary.value, now)
-    primary.linearRampToValueAtTime(0, end); secondary.linearRampToValueAtTime(1, end)
+    primary.setValueAtTime(primaryStart, now); secondary.setValueAtTime(secondaryStart, now)
+    // Approximate equal-power curves with short linear segments. This avoids the
+    // AudioParam curve-overlap restrictions when a fade is interrupted and restarted.
+    for (let i = 1; i < sampleCount; i++) {
+      const at = now + duration * (i / (sampleCount - 1))
+      primary.linearRampToValueAtTime(primaryCurve[i], at)
+      secondary.linearRampToValueAtTime(secondaryCurve[i], at)
+    }
     return true
   }, [])
 
