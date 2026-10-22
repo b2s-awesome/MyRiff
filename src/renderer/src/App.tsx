@@ -589,7 +589,6 @@ export default function App() {
     if (!audio || !audioSrc) return
     audio.src = audioSrc; audio.load()
   }, [audioSrc])
-  useEffect(() => { if (audioRef.current) audioRef.current.volume = volume }, [volume])
   useEffect(() => { if (audioRef.current) audioRef.current.loop = repeat === 'one' }, [repeat])
   useEffect(() => {
     const audio = audioRef.current
