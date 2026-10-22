@@ -344,6 +344,14 @@ export default function App() {
     if (!audio) return
     const gainDb = settings?.normalizeLoudness && Number.isFinite(current?.replayGainDb) ? Number(current?.replayGainDb) : 0
     audio.volume = Math.max(0, Math.min(1, volume * Math.pow(10, gainDb / 20)))
+
+    // Keep the secondary deck in sync when the user changes volume mid-crossfade.
+    const transition = crossfadeRef.current
+    const secondary = nextAudioRef.current
+    if (secondary && transition && (transition.phase === 'fading' || transition.phase === 'handoff')) {
+      const nextGainDb = settings?.normalizeLoudness && Number.isFinite(transition.track.replayGainDb) ? Number(transition.track.replayGainDb) : 0
+      secondary.volume = Math.max(0, Math.min(1, volume * Math.pow(10, nextGainDb / 20)))
+    }
   }, [volume, settings?.normalizeLoudness, current?.path, current?.replayGainDb])
   useEffect(() => {
     const minutes = settings?.sleepTimerMinutes || 0
