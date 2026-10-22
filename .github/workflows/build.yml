@@ -62,6 +62,20 @@ jobs:
           if [[ "$tag" == *-* ]]; then prerelease=true; else prerelease=false; fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+      - name: Point the release tag at this validated commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          ref="tags/$RELEASE_TAG"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/$ref" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/$ref" -f sha="$GITHUB_SHA" -F force=true >/dev/null
+            echo "Updated $RELEASE_TAG to validated commit $GITHUB_SHA."
+          else
+            echo "No existing tag ref; the release action will create $RELEASE_TAG at $GITHUB_SHA."
+          fi
       - name: Create draft release at the validated commit
         id: create
         uses: softprops/action-gh-release@v2
@@ -71,6 +85,25 @@ jobs:
           draft: true
           prerelease: ${{ steps.meta.outputs.prerelease }}
           generate_release_notes: true
+      - name: Clear stale assets from an earlier draft attempt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.create.outputs.id }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::Draft release ID is missing; cannot clean up release assets safely."
+            exit 1
+          fi
+          asset_ids="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.assets[].id' || true)"
+          if [[ -n "$asset_ids" ]]; then
+            while IFS= read -r asset_id; do
+              [[ -n "$asset_id" ]] || continue
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" >/dev/null
+            done <<< "$asset_ids"
+          fi
+          echo "Draft release assets are clean; this run will upload fresh packages."
 
   build:
     name: Build ${{ matrix.platform }}
