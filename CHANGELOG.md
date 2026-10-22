@@ -1,49 +1,17 @@
 # Changelog
 
-## Unreleased — safe metadata export undo
+## v0.2.1-preview.1 — 2026-10-22
 
-- Added an undo record for single-track and bulk MyRiff-generated tagged copies. Undo verifies that the output is a regular file and matches its recorded size, modification time and SHA-256 before deletion; changed, missing or unverifiable files are skipped. Original source paths are recorded separately and never targeted.
-- Added regression coverage for undo-record validation, database persistence, source-path protection and the renderer/IPC contract.
+- Fixed processed playback output routing: the selected output device is applied to the AudioContext graph, changes retarget the live graph, and unsupported/unavailable routes report an actionable error. System default remains a valid choice.
+- Added on-demand stable/preview release browsing. MyRiff backs up its local data before opening an installer; because this repository is private, release downloads use the signed-in GitHub browser rather than storing credentials or tokens in the app. Installing and rolling back remain explicit manual actions.
+- Added safe undo for single-track and bulk MyRiff-generated tagged copies. Undo only removes regular files that still match their recorded size, modification time and SHA-256; modified, missing or unverifiable copies are skipped, and original source tracks are never deleted.
+- Added optional local acoustic similarity for Local Radio, cached on device with bounded FFmpeg analysis. No audio is uploaded; this is a lightweight similarity heuristic, not a trained recommendation model.
+- Added packaged startup smoke checks for the renderer root and preload bridge on Windows, macOS Intel, macOS ARM64 and Linux. The release CI matrix passed the tests, TypeScript typecheck, production build, package generation and packaged-app startup checks before this version bump.
+- Retained explicit reporting for features that need hardware tests or a native backend rather than claiming guarantees the Electron Web Audio engine cannot provide.
 
-## Unreleased — release manager and local discovery
+## Known limitations
 
-- Added an on-demand stable/preview release browser with OS/architecture-aware installer selection and a mandatory local backup before opening an installer. The app does not silently replace its own binaries; older releases still require a manual install.
-- Added optional local spectral/chroma similarity ranking for Local Radio. Audio segments are processed with FFmpeg, bounded for resource use, and cached locally by file identity and feature version; no audio is uploaded.
-- Added strict GitHub host/path validation for release pages and installer links, plus regression coverage for the release flow.
-- Added a private-repository fallback: when anonymous GitHub release metadata returns 404, MyRiff prompts for a local backup before opening Releases in the signed-in browser. No GitHub credentials or tokens are requested or stored by MyRiff.
-
-
-## Release hardening in progress
-
-- Added a packaged startup smoke-test runner that verifies the renderer root and preload bridge before requiring a clean exit.
-- Added startup smoke testing for Windows, macOS and Linux; Linux uses Xvfb.
-- Restricted CI download artifacts to installable packages rather than including unpacked app directories.
-- Added a post-matrix job to persist the exact dependency lockfile only after all validation and platform builds pass.
-- Updated documentation to distinguish successful packaging from real audio playback and hardware validation.
-
-These additional smoke/lockfile changes must pass the current branch's own Actions run before being treated as verified.
-
-
-## Unreleased — completion pass
-
-- Added opt-in scheduled synchronisation for saved playlist sources, with configurable intervals while MyRiff is running.
-- Added pause-and-resume workflow for downloads. Pausing stops yt-dlp and relies on its retained partial files and `--continue` when resumed; this is not OS-level process suspension.
-- Added customisation profile JSON export/import, separate from full database backup. Import filters keys and validates common numeric ranges, enum values, EQ bands, effect order, shortcuts and audio profiles.
-- Added portable data mode with a marker file, SQLite WAL checkpointing, data-directory copy and restart on switching. The executable directory must be writable; packaged runtime migration still requires testing.
-- Added waveform drag-to-select trim ranges with 0.1-second snapping and undo/redo for waveform range changes.
-- Added a bulk metadata copy editor for multi-track artist/album/year overrides and title templates, with per-file failure reporting and no source overwrite.
-- Added an approximate karaoke word-highlight preview that explicitly does not claim authored word-level timing.
-- Corrected the SoundTouch path so media-element playback rate remains at 1× when the worklet controls tempo; the fallback explicitly couples pitch and speed.
-- Pinned direct dependency versions, added syntax transpilation checks, added an aggregate `verify` command, and expanded source regression tests.
-
-## Known release blockers
-
-- A committed `package-lock.json` is being added by CI only after the full main-branch validation and packaging matrix passes.
-- TypeScript typecheck, Electron build, and Windows/macOS/Linux package jobs have since passed in GitHub Actions. Packaged startup smoke tests and real audio playback/device tests remain separate gates.
-- True overlapping crossfade/gapless playback, full A/B player, parametric EQ/stereo width, waveform zoom/transient snapping, word-level karaoke lyrics, keyboard shortcut capture/conflict detection, in-app update/rollback, and full cross-platform runtime validation remain incomplete.
-
-
-## Unreleased
-
-- Add nested playlist folders with subfolders, direct playlist assignment, folder-aware backup restore, and safe folder deletion that preserves playlists.
-- Improve playback lab with real overlapping crossfade, ordered DSP effects, and waveform zoom/pan (after CI validation).
+- Exact sample-perfect gapless playback across every codec/device and native exclusive/bit-perfect output require a native audio backend beyond the current Chromium Web Audio DSP pipeline.
+- Streaming and remote playlist extraction depend on the provider and yt-dlp's currently supported public interfaces. MyRiff does not bypass access controls or DRM.
+- The package smoke tests prove build/renderer startup, not listening quality on every physical output, provider reliability, full accessibility coverage, or code signing/notarisation.
+- Karaoke word highlighting is exact only when word timestamps exist; approximate highlighting remains heuristic. Discord cover art uses a registered application asset rather than uploading arbitrary local artwork.

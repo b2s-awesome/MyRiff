@@ -1,33 +1,26 @@
 # MyRiff build status
 
-Last inspected: 2026-10-17.
+Last verified: 2026-10-22.
 
-## Previously verified on GitHub Actions
+## Verified code matrix before the version bump
 
-The completed package matrix at [run 39070481049](https://github.com/b2s-awesome/MyRiff/actions/runs/39070481049) passed:
+[GitHub Actions run 39696612211](https://github.com/b2s-awesome/MyRiff/actions/runs/39696612211) passed on the output-routing change set immediately before this release branch was versioned. It passed:
 
-- Dependency installation and production dependency audit.
-- Source sanity, TypeScript/TSX syntax transpilation and regression tests.
-- Full TypeScript typecheck and Electron/Vite renderer + main-process build.
-- Windows NSIS/ZIP packaging, macOS DMG/ZIP packaging, and Linux AppImage/DEB/tarball packaging.
+- Production dependency audit, source sanity, syntax transpilation and regression tests.
+- Full TypeScript typecheck and Electron/Vite production build.
+- Windows NSIS/ZIP packaging plus a packaged-app startup smoke test.
+- macOS Intel DMG/ZIP packaging plus a packaged-app startup smoke test.
+- macOS ARM64 DMG/ZIP packaging plus a packaged-app startup smoke test.
+- Linux AppImage/DEB/tarball packaging plus an Xvfb packaged-app startup smoke test.
 
-After the download scheduler was merged, [run 39071993319](https://github.com/b2s-awesome/MyRiff/actions/runs/39071993319) was also building against the updated main branch. Use the live run page for its final conclusion.
+This release branch bumps the application version to 0.2.1. The release branch's own CI run must pass before its preview release is considered published.
 
-## New hardening work on this branch
+## What CI does not prove
 
-- Packaged application smoke tests for Windows, macOS and Linux. The test waits for the renderer root and preload API to initialise and then requires a clean exit.
-- Linux startup smoke tests use Xvfb.
-- CI artifacts are narrowed to installable deliverables, not the whole unpacked application tree.
-- A lockfile persistence job commits the dependency graph only after the full validation and three-platform package matrix succeeds.
+- Music playback quality and device selection with physical audio hardware/drivers.
+- Crossfade quality over every codec/provider, or exact sample-gapless and bit-perfect/exclusive output.
+- Provider-specific streaming/playlist extractor reliability, which can change independently of MyRiff.
+- Full interactive accessibility testing or all platform-specific media-key behaviors.
+- Code signing/notarisation. Windows/macOS packages may show platform security prompts.
 
-Do not treat these new checks as passed until the branch's own GitHub Actions run completes green.
-
-## Still not proven by CI
-
-- Listening tests with local music files and physical audio outputs, including crossfade quality across codecs.
-- Provider-specific stream/playlist extraction reliability, which can change independently of this application.
-- Full automated UI interaction/accessibility coverage and upgrade/rollback validation.
-- Code signing and notarisation. Windows and macOS packages may show platform security prompts.
-- All features marked partial or planned in `FEATURE-ROADMAP.md`.
-
-A green package build plus a startup smoke test is a meaningful release gate, but is not proof that every advanced feature has been manually validated.
+A green package build plus a startup smoke test is a meaningful release gate, not proof that every advanced feature is manually validated.
