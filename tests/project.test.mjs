@@ -584,3 +584,20 @@ test('metadata tagged-copy undo validates file identity and never targets the so
   assert.match(page, /Undo last export/)
   assert.match(page, /Original source files are never deleted/)
 })
+
+
+test('A/B clean-signal bypass skips every live DSP effect while preserving the output analyser path', () => {
+  const engine = read('src/renderer/src/useAudioEngine.ts')
+  const panel = read('src/renderer/src/components/EffectsPanel.tsx')
+  assert.match(panel, /A\/B: clean signal/)
+  assert.match(engine, /if \(!settings\?\.effectsBypass\) \{\s*for \(const effect of uniqueChain\)/)
+  assert.match(engine, /const width = settings\?\.effectsBypass \? 1/)
+  assert.match(engine, /current\.connect\(analyser\); analyser\.connect\(ctx\.destination\)/)
+})
+
+
+test('volume changes preserve the active per-track loudness-normalisation gain', () => {
+  const app = read('src/renderer/src/App.tsx')
+  assert.match(app, /audio\.volume = Math\.max\(0, Math\.min\(1, volume \* Math\.pow\(10, gainDb \/ 20\)\)\)/)
+  assert.doesNotMatch(app, /audioRef\.current\.volume = volume/)
+})
