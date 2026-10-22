@@ -594,3 +594,10 @@ test('A/B clean-signal bypass skips every live DSP effect while preserving the o
   assert.match(engine, /const width = settings\?\.effectsBypass \? 1/)
   assert.match(engine, /current\.connect\(analyser\); analyser\.connect\(ctx\.destination\)/)
 })
+
+
+test('volume changes preserve the active per-track loudness-normalisation gain', () => {
+  const app = read('src/renderer/src/App.tsx')
+  assert.match(app, /audio\.volume = Math\.max\(0, Math\.min\(1, volume \* Math\.pow\(10, gainDb \/ 20\)\)\)/)
+  assert.doesNotMatch(app, /audioRef\.current\.volume = volume/)
+})
