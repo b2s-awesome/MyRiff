@@ -51,20 +51,24 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
       for (const node of widthGainsRef.current) node.disconnect()
       let current: AudioNode = input
       const uniqueChain: EffectName[] = (settings?.effectChain?.length ? settings.effectChain : (['eq', 'distortion', 'reverb'] as EffectName[])).filter((name, i, all) => all.indexOf(name) === i)
-      for (const effect of uniqueChain) {
-        if (effect === 'eq') {
-          const filters = filtersRef.current
-          if (filters.length) {
-            current.connect(filters[0])
-            for (let i = 1; i < filters.length; i++) filters[i - 1].connect(filters[i])
-            current = filters[filters.length - 1]
+      // A/B bypass must skip the entire DSP chain, not just stereo width.
+      // Keeping the source connected directly to the analyser below gives a true clean-signal comparison.
+      if (!settings?.effectsBypass) {
+        for (const effect of uniqueChain) {
+          if (effect === 'eq') {
+            const filters = filtersRef.current
+            if (filters.length) {
+              current.connect(filters[0])
+              for (let i = 1; i < filters.length; i++) filters[i - 1].connect(filters[i])
+              current = filters[filters.length - 1]
+            }
+          } else if (effect === 'distortion' && distortionRef.current) {
+            current.connect(distortionRef.current); current = distortionRef.current
+          } else if (effect === 'reverb' && dryRef.current && wetRef.current && convolverRef.current && reverbMixRef.current) {
+            current.connect(dryRef.current); dryRef.current.connect(reverbMixRef.current)
+            current.connect(convolverRef.current); convolverRef.current.connect(wetRef.current); wetRef.current.connect(reverbMixRef.current)
+            current = reverbMixRef.current
           }
-        } else if (effect === 'distortion' && distortionRef.current) {
-          current.connect(distortionRef.current); current = distortionRef.current
-        } else if (effect === 'reverb' && dryRef.current && wetRef.current && convolverRef.current && reverbMixRef.current) {
-          current.connect(dryRef.current); dryRef.current.connect(reverbMixRef.current)
-          current.connect(convolverRef.current); convolverRef.current.connect(wetRef.current); wetRef.current.connect(reverbMixRef.current)
-          current = reverbMixRef.current
         }
       }
       const width = settings?.effectsBypass ? 1 : Math.max(0, Math.min(2, settings?.stereoWidth ?? 1))
