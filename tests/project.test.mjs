@@ -601,3 +601,12 @@ test('volume changes preserve the active per-track loudness-normalisation gain',
   assert.match(app, /audio\.volume = Math\.max\(0, Math\.min\(1, volume \* Math\.pow\(10, gainDb \/ 20\)\)\)/)
   assert.doesNotMatch(app, /audioRef\.current\.volume = volume/)
 })
+
+
+test('live volume and loudness-normalisation changes update both active crossfade decks', () => {
+  const app = read('src/renderer/src/App.tsx')
+  assert.match(app, /const transition = crossfadeRef\.current/)
+  assert.match(app, /transition\.phase === 'fading' \|\| transition\.phase === 'handoff'/)
+  assert.match(app, /transition\.track\.replayGainDb/)
+  assert.match(app, /secondary\.volume = Math\.max\(0, Math\.min\(1, volume \* Math\.pow\(10, nextGainDb \/ 20\)\)\)/)
+})
