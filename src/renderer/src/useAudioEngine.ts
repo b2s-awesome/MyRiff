@@ -191,7 +191,7 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
     const duration = Math.max(0.08, Math.min(20, seconds))
     const primaryStart = Math.max(0, Math.min(1, primary.value))
     const secondaryStart = Math.max(0, Math.min(1, secondary.value))
-    const sampleCount = 65
+    const sampleCount = 257
     const primaryCurve = new Float32Array(sampleCount)
     const secondaryCurve = new Float32Array(sampleCount)
     for (let i = 0; i < sampleCount; i++) {
@@ -202,9 +202,13 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
     }
     primary.cancelScheduledValues(now); secondary.cancelScheduledValues(now)
     primary.setValueAtTime(primaryStart, now); secondary.setValueAtTime(secondaryStart, now)
-    // Equal-power curves avoid the perceived mid-fade dip of linear amplitude ramps.
-    primary.setValueCurveAtTime(primaryCurve, now, duration)
-    secondary.setValueCurveAtTime(secondaryCurve, now, duration)
+    // Approximate equal-power curves with short linear segments. This avoids the
+    // AudioParam curve-overlap restrictions when a fade is interrupted and restarted.
+    for (let i = 1; i < sampleCount; i++) {
+      const at = now + duration * (i / (sampleCount - 1))
+      primary.linearRampToValueAtTime(primaryCurve[i], at)
+      secondary.linearRampToValueAtTime(secondaryCurve[i], at)
+    }
     return true
   }, [])
 
