@@ -70,7 +70,7 @@ jobs:
         run: |
           set -euo pipefail
           ref="tags/$RELEASE_TAG"
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/$ref" >/dev/null 2>&1; then
+          if gh api "repos/$GITHUB_REPOSITORY/git/refs/$ref" >/dev/null 2>&1; then
             gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/$ref" -f sha="$GITHUB_SHA" -F force=true >/dev/null
             echo "Updated $RELEASE_TAG to validated commit $GITHUB_SHA."
           else
