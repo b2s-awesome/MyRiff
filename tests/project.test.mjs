@@ -614,9 +614,10 @@ test('live volume and loudness-normalisation changes update both active crossfad
 
 test('crossfade uses bounded equal-power gain curves instead of linear amplitude ramps', () => {
   const engine = read('src/renderer/src/useAudioEngine.ts')
-  assert.match(engine, /const sampleCount = 65/)
+  assert.match(engine, /const sampleCount = 257/)
   assert.match(engine, /primaryCurve\[i\] = primaryStart \* Math\.cos\(angle\)/)
   assert.match(engine, /secondaryCurve\[i\] = secondaryStart \+ \(1 - secondaryStart\) \* Math\.sin\(angle\)/)
-  assert.match(engine, /primary\.setValueCurveAtTime\(primaryCurve, now, duration\)/)
-  assert.match(engine, /secondary\.setValueCurveAtTime\(secondaryCurve, now, duration\)/)
+  assert.match(engine, /primary\.linearRampToValueAtTime\(primaryCurve\[i\], at\)/)
+  assert.match(engine, /secondary\.linearRampToValueAtTime\(secondaryCurve\[i\], at\)/)
+  assert.match(engine, /AudioParam curve-overlap restrictions/)
 })
