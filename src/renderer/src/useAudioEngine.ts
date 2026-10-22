@@ -187,10 +187,24 @@ export function useAudioEngine(audioRef: RefObject<HTMLAudioElement | null>, set
   const crossfadeToNext = useCallback((seconds: number) => {
     const ctx = contextRef.current; const primary = primaryFadeGainRef.current?.gain; const secondary = nextFadeGainRef.current?.gain
     if (!ctx || !primary || !secondary || !Number.isFinite(seconds) || seconds <= 0) return false
-    const now = ctx.currentTime; const end = now + Math.max(0.08, Math.min(20, seconds))
+    const now = ctx.currentTime
+    const duration = Math.max(0.08, Math.min(20, seconds))
+    const primaryStart = Math.max(0, Math.min(1, primary.value))
+    const secondaryStart = Math.max(0, Math.min(1, secondary.value))
+    const sampleCount = 65
+    const primaryCurve = new Float32Array(sampleCount)
+    const secondaryCurve = new Float32Array(sampleCount)
+    for (let i = 0; i < sampleCount; i++) {
+      const progress = i / (sampleCount - 1)
+      const angle = progress * Math.PI / 2
+      primaryCurve[i] = primaryStart * Math.cos(angle)
+      secondaryCurve[i] = secondaryStart + (1 - secondaryStart) * Math.sin(angle)
+    }
     primary.cancelScheduledValues(now); secondary.cancelScheduledValues(now)
-    primary.setValueAtTime(primary.value, now); secondary.setValueAtTime(secondary.value, now)
-    primary.linearRampToValueAtTime(0, end); secondary.linearRampToValueAtTime(1, end)
+    primary.setValueAtTime(primaryStart, now); secondary.setValueAtTime(secondaryStart, now)
+    // Equal-power curves avoid the perceived mid-fade dip of linear amplitude ramps.
+    primary.setValueCurveAtTime(primaryCurve, now, duration)
+    secondary.setValueCurveAtTime(secondaryCurve, now, duration)
     return true
   }, [])
 
